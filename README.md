@@ -23,9 +23,7 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
    and set the time zone. Type `erase` to confirm. **This erases macOS.**
 5. Remove the stick and restart. The Air boots to the PIN screen, then Intent.
 
-The PIN unlocks the device and is the password for `sudo`.
-
-To add coding agents, click **Terminal** in the top bar and pick one from the menu.
+The PIN unlocks the device and is the password for `sudo` in Intent's terminal.
 
 ## Layout
 

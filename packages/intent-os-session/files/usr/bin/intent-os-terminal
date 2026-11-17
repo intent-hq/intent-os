@@ -1,8 +1,0 @@
-#!/bin/sh
-# Open (or focus) the Intent OS terminal: a floating window over Intent.
-if swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "intent-os-terminal")' >/dev/null 2>&1; then
-  exec swaymsg -q '[app_id="intent-os-terminal"] focus'
-fi
-cd "$HOME" || exit 1
-exec foot --config=/usr/share/intent-os/foot.ini --app-id=intent-os-terminal \
-  --title="Terminal" bash -c 'intent-os-agents; exec bash -l'

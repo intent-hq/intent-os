@@ -6,7 +6,7 @@ pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervi
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
 license=(Apache-2.0)
-depends=(intent-os-base intent-appimage foot ttf-dejavu sway swayidle swaylock greetd xorg-xwayland brightnessctl jq wireplumber networkmanager)
+depends=(intent-os-base intent-appimage sway swayidle swaylock greetd xorg-xwayland brightnessctl jq wireplumber networkmanager)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
