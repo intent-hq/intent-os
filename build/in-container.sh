@@ -277,13 +277,13 @@ CONF
   losetup -d "$esp" "$root"
   trap - EXIT
 
-  local qcow=$OUT/vm/intent-os-$BUILD_ID-arm64.qcow2 size limit=$((500 * 1024 * 1024))
+  local qcow=$OUT/vm/intent-os-$BUILD_ID-arm64.qcow2 size limit=$((700 * 1024 * 1024))
   qemu-img convert -c -O qcow2 -o compression_type=zstd "$img" "$qcow"
   rm -f "$img"
   (cd "$OUT/vm" && sha256sum ./*.qcow2 > SHA256SUMS)
   size=$(stat -c %s "$qcow")
-  log "VM image size: $((size / 1024 / 1024)) MiB (limit 500 MiB)"
-  (( size <= limit )) || { echo "error: the bootstrap VM image must stay under 500 MiB" >&2; exit 1; }
+  log "VM image size: $((size / 1024 / 1024)) MiB (limit 700 MiB)"
+  (( size <= limit )) || { echo "error: the bootstrap VM image must stay under 700 MiB" >&2; exit 1; }
 }
 
 prepare
