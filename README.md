@@ -51,8 +51,12 @@ make lint     # shellcheck
 ```
 
 CI (`.github/workflows/build.yml`) builds, runs the boot test, and publishes only builds
-that pass. Set the `INTENT_OS_SIGNING_KEY` secret to publish the signed pacman repo that
-installed devices use for Intent OS updates. Intent updates itself.
+that pass. It signs packages with the `INTENT_OS_SIGNING_KEY` secret and publishes the
+signed pacman repo that installed devices use for Intent OS updates. Intent updates
+itself.
+
+Package signing key: `F599 5B78 7437 2B7F 456E  A124 55F5 3DF0 24F2 A49A`
+(ed25519, expires 2029-11-16). Public key: [keys/intent-os.asc](keys/intent-os.asc).
 
 ## License
 
