@@ -85,6 +85,7 @@ jobs:
       - name: Install QEMU
         run: sudo apt-get update -q && sudo apt-get install -yq qemu-system-x86 qemu-utils ovmf socat
       - name: Install and boot into Intent
+        timeout-minutes: 50
         run: make smoke
       - uses: actions/upload-artifact@v4
         if: always()
