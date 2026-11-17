@@ -1,6 +1,7 @@
 #!/bin/bash
 # swaybar status (i3bar protocol): network, battery, clock, device controls.
-# A dot on a control means an installed update needs that restart.
+# A dot on Restart means an installed system update needs a reboot.
+# Intent shows its own update prompt.
 set -u
 
 confirm() {
@@ -57,9 +58,6 @@ hint="#fbbf24"
 while :; do
   intent_label="Restart Intent" intent_color=$dim
   reboot_label="Restart" reboot_color=$dim
-  if [[ -e /var/lib/intent-os/intent-update-pending ]]; then
-    intent_label="Restart Intent •" intent_color=$hint
-  fi
   if [[ -e /run/intent-os/reboot-required ]]; then
     reboot_label="Restart •" reboot_color=$hint
   fi

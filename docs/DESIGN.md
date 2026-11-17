@@ -14,8 +14,8 @@ base layer.
 2. **The ISO is an offline installer.** The ISO carries a complete pacman repo for one
    pinned Arch snapshot plus the Intent OS packages. The installer needs no network and
    always installs the exact set that passed the boot test.
-3. **Updates are `pacman -Syu`** against the pinned snapshot, plus the signed
-   `intent-os` repo for Intent OS and Intent packages.
+3. **OS updates are `pacman -Syu`** against the pinned snapshot, plus the signed
+   `intent-os` repo for Intent OS packages. **Intent updates itself** in the app.
 
 ## 3. Use Intent as written
 
@@ -23,10 +23,10 @@ No changes to `cloudlands-fe` or `intentd`.
 
 | Need | How |
 |---|---|
-| Intent build | `intent-desktop-bin` unpacks the released `intent_<v>_amd64.deb` into `/opt/Intent`. `bump-intent.yml` follows the stable channel. |
+| Intent build | The released AppImage. `intent-appimage` ships it in `/usr/share/intent-os/`; `prepare-intent` copies it to `~/.local/lib/intent-os/Intent.AppImage` on first start. `bump-intent.yml` keeps the seed on the newest alpha. |
+| Intent updates | Intent's own updater (electron-updater, AppImage path) replaces the owner's copy and relaunches. The owner sees Intent's normal update prompt. The `.deb` path cannot work here: it needs `dpkg`. |
 | `intentd` | Electron starts its bundled sidecar as usual. |
-| One updater | `prepare-intent` sets `updateChannel: "disabled"` in `~/.config/Intent/local-prefs.json` before every start. |
-| No app menu bar | Same file: `menuBarAutoHide: true` on first start. |
+| Channel | First start writes `updateChannel: "alpha"` (newest Intent) and `menuBarAutoHide: true` to `~/.config/Intent/local-prefs.json`. The owner can change the channel in settings. |
 | Secrets | No keyring daemon. Electron falls back to its basic store; `intentd` uses none. |
 
 ## 4. Session
@@ -65,7 +65,9 @@ stateDiagram-v2
   Reboot --> [*]
 ```
 
-1. `intent.service` runs `ExecStartPost=intent-health`, which waits for a visible sway
+1. `intent.service` runs `run-intent`. It forwards SIGTERM to Intent, and after an
+   in-app update it follows the relaunched Intent, so systemd keeps one supervised
+   instance. `ExecStartPost=intent-health`, which waits for a visible sway
    window with app id or class `intent`. A failed check fails the start.
 2. On success it starts `intent-os-boot-ok.service`, which sets `boot_success=1` in
    `/efi/intent-os/grubenv`.
@@ -82,10 +84,9 @@ stateDiagram-v2
 2. **When.** `intent-os-update.timer` checks hourly. It runs only when the session's
    logind IdleHint is set (5 min idle) and the device is on AC power.
 3. **Snapshots.** snap-pac takes btrfs pre/post snapshots around every pacman run.
-4. **Intent** is only downloaded during the update. It installs in `prepare-intent`
-   before the next Intent start, so files never change under a running app (and running
-   agents are never stopped for an update). A dot on **Restart Intent** shows it is
-   waiting.
+4. **Intent** is not part of the OS update. It updates its own AppImage, which the
+   owner's account owns, and asks before it restarts. Running agents are never stopped
+   by an OS update.
 5. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
    firmware, systemd, glibc, Mesa, sway, or Wi-Fi driver updates. A dot on **Restart**
    shows it. The device never reboots by itself for an update.

@@ -1,8 +1,0 @@
-#!/bin/sh
-# Install the Intent package downloaded by intent-os-update. Runs while
-# Intent is stopped, so no files change under a running app.
-set -eu
-pending=/var/lib/intent-os/intent-update-pending
-[ -e "$pending" ] || exit 0
-pacman -S --noconfirm --needed intent-desktop-bin
-rm -f "$pending"

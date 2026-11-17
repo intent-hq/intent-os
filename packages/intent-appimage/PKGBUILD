@@ -1,0 +1,21 @@
+# The released Intent AppImage, used only to seed the owner's own copy at
+# ~/.local/lib/intent-os/Intent.AppImage. Intent then updates that copy
+# itself (alpha channel by default). CI bumps pkgver and sha256sums daily
+# from the cloudlands-releases alpha feed.
+pkgname=intent-appimage
+pkgver=2.344.0
+pkgrel=1
+pkgdesc="Intent AppImage (seed for the self-updating owner copy)"
+arch=(x86_64)
+url="https://intentapp.dev/"
+license=(Apache-2.0)
+depends=(fuse2 gtk3 nss libnotify libxss libxtst xdg-utils at-spi2-core libsecret alsa-lib git)
+options=(!strip !debug)
+source=("Intent-${pkgver}.AppImage::https://github.com/intent-hq/cloudlands-releases/releases/download/v${pkgver}/Intent-${pkgver}.AppImage")
+noextract=("Intent-${pkgver}.AppImage")
+sha256sums=('f9852b2a525735378eadf6e1232660bcd59d32aa2ea196334f037762ba4082e4')
+
+package() {
+  install -Dm755 "Intent-${pkgver}.AppImage" "$pkgdir/usr/share/intent-os/Intent.AppImage"
+  echo "$pkgver" > "$pkgdir/usr/share/intent-os/Intent.AppImage.version"
+}

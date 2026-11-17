@@ -10,7 +10,7 @@ set -euo pipefail
 SRC=/src
 OUT=$SRC/out
 WORK=/tmp/intent-os
-PACKAGES=(intent-desktop-bin intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
+PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
 INSTALL_SET=(intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
@@ -63,7 +63,7 @@ build_packages() {
     [[ -L $OUT/repo/$f ]] && cp --remove-destination "$(readlink -f "$OUT/repo/$f")" "$OUT/repo/$f"
   done
   local intent_version
-  intent_version=$(sed -n 's/^pkgver=//p' "$SRC/packages/intent-desktop-bin/PKGBUILD")
+  intent_version=$(sed -n 's/^pkgver=//p' "$SRC/packages/intent-appimage/PKGBUILD")
   printf 'ARCHIVE_DATE=%s\nBUILD_ID=%s\nINTENT_VERSION=%s\n' \
     "$ARCHIVE_DATE" "$BUILD_ID" "$intent_version" > "$OUT/channel.env"
 }

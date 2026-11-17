@@ -1,7 +1,7 @@
 #!/bin/bash
 # Move this device to the newest channel that passed the Intent OS boot test.
 # Runs only when the owner is idle and on AC power, unless called with --now.
-# Intent itself is only downloaded here; it installs on the next Intent start.
+# Intent is not updated here: it updates its own AppImage in the app.
 set -euo pipefail
 
 CHANNEL_URL=${INTENT_OS_CHANNEL_URL:-https://github.com/intent-hq/intent-os/releases/download/channel/channel.env}
@@ -58,13 +58,7 @@ log "updating to $date (build $build)"
 printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$date" > "$MIRRORLIST"
 touch "$STATE/retry"
 pacman -Sy --noconfirm --needed archlinux-keyring
-pacman -Su --noconfirm --ignore intent-desktop-bin
-
-if pacman -Qu intent-desktop-bin >/dev/null 2>&1; then
-  pacman -Sw --noconfirm intent-desktop-bin
-  touch "$STATE/intent-update-pending"
-  log "Intent update downloaded; installs on next Intent start"
-fi
+pacman -Su --noconfirm
 echo "$build" > "$STATE/applied-build"
 rm -f "$STATE/retry"
 log "done"

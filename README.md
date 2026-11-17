@@ -29,7 +29,7 @@ The PIN unlocks the device and is the password for `sudo` in Intent's terminal.
 
 | Path | Purpose |
 |---|---|
-| `packages/intent-desktop-bin` | Released Intent Linux build, repackaged for pacman |
+| `packages/intent-appimage` | Released Intent AppImage; seeds the owner's self-updating copy |
 | `packages/intent-os-base` | Base system: kernel, btrfs + snapper, network, audio, owner tools |
 | `packages/intent-os-session` | sway kiosk, PIN lock, top bar with device controls, Intent supervision |
 | `packages/intent-os-update` | Staged idle-time updates and restart hints |
@@ -49,7 +49,7 @@ make lint     # shellcheck
 
 CI (`.github/workflows/build.yml`) builds, runs the boot test, and publishes only builds
 that pass. Set the `INTENT_OS_SIGNING_KEY` secret to publish the signed pacman repo that
-installed devices use for Intent OS and Intent updates.
+installed devices use for Intent OS updates. Intent updates itself.
 
 ## License
 

@@ -1,6 +1,0 @@
-[Unit]
-Description=Install a downloaded Intent update before Intent starts
-
-[Service]
-Type=oneshot
-ExecStart=/usr/lib/intent-os/intent-upgrade

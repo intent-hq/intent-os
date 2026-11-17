@@ -1,10 +1,11 @@
 name: bump-intent
 
-# Follow the Intent stable channel. A bump commits to main, which builds,
-# boot-tests, and publishes a new image.
+# Keep the seed AppImage on the newest Intent (alpha). Installed devices
+# update Intent in the app; this only keeps new installs current. A bump
+# commits to main, which builds, boot-tests, and publishes a new image.
 on:
   schedule:
-    - cron: "41 * * * *"
+    - cron: "41 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -21,16 +22,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          pkgbuild=packages/intent-desktop-bin/PKGBUILD
+          pkgbuild=packages/intent-appimage/PKGBUILD
           current=$(sed -n 's/^pkgver=//p' "$pkgbuild")
-          latest=$(gh release download stable --repo intent-hq/cloudlands-releases -p latest-linux.yml -O - \
+          latest=$(gh release download alpha --repo intent-hq/cloudlands-releases -p latest-linux.yml -O - \
             | sed -n 's/^version: *//p')
           [[ $latest =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version '$latest'"; exit 1; }
           echo "current=$current latest=$latest"
           [ "$current" = "$latest" ] && exit 0
-          deb="intent_${latest}_amd64.deb"
-          gh release download "v$latest" --repo intent-hq/cloudlands-releases -p "$deb" -D "$RUNNER_TEMP"
-          sum=$(sha256sum "$RUNNER_TEMP/$deb" | cut -d' ' -f1)
+          file="Intent-${latest}.AppImage"
+          gh release download "v$latest" --repo intent-hq/cloudlands-releases -p "$file" -D "$RUNNER_TEMP"
+          sum=$(sha256sum "$RUNNER_TEMP/$file" | cut -d' ' -f1)
           sed -i -e "s/^pkgver=.*/pkgver=$latest/" -e "s/^pkgrel=.*/pkgrel=1/" \
             -e "s/^sha256sums=.*/sha256sums=('$sum')/" "$pkgbuild"
           echo "version=$latest" >> "$GITHUB_OUTPUT"

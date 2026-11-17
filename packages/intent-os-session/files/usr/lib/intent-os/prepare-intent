@@ -1,17 +1,13 @@
 #!/bin/sh
-# Install a pending Intent update before start, never under a running app.
+# Seed the owner's self-updating Intent AppImage and its first-run prefs.
 set -eu
-if [ -e /var/lib/intent-os/intent-update-pending ]; then
-  systemctl start intent-os-intent-upgrade.service || true
+app="$HOME/.local/lib/intent-os/Intent.AppImage"
+if [ ! -x "$app" ]; then
+  install -Dm755 /usr/share/intent-os/Intent.AppImage "$app"
 fi
-# pacman is the only updater. Keep the in-app updater off.
 dir="$HOME/.config/Intent"
 prefs="$dir/local-prefs.json"
 mkdir -p "$dir"
-[ -s "$prefs" ] || echo '{"menuBarAutoHide":true}' > "$prefs"
-tmp=$(mktemp "$dir/.local-prefs.XXXXXX")
-if jq '.updateChannel = "disabled"' "$prefs" > "$tmp"; then
-  mv "$tmp" "$prefs"
-else
-  rm -f "$tmp"
-fi
+# First run only: newest Intent (alpha), no app menu bar. The owner can
+# change the channel in Intent's settings later.
+[ -s "$prefs" ] || echo '{"updateChannel":"alpha","menuBarAutoHide":true}' > "$prefs"
