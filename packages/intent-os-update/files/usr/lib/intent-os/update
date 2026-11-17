@@ -54,10 +54,15 @@ if [[ $(cat "$STATE/applied-build" 2>/dev/null) == "$build" && ! -e $STATE/retry
 fi
 
 log "updating to $date (build $build)"
-# shellcheck disable=SC2016 # pacman expands $repo and $arch
-printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$date" > "$MIRRORLIST"
+# Arch Linux ARM has no archive; aarch64 keeps its normal mirrors.
+if [[ $(uname -m) == x86_64 ]]; then
+  # shellcheck disable=SC2016 # pacman expands $repo and $arch
+  printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$date" > "$MIRRORLIST"
+fi
 touch "$STATE/retry"
-pacman -Sy --noconfirm --needed archlinux-keyring
+keyring=archlinux-keyring
+[[ $(uname -m) == aarch64 ]] && keyring=archlinuxarm-keyring
+pacman -Sy --noconfirm --needed "$keyring"
 pacman -Su --noconfirm
 echo "$build" > "$STATE/applied-build"
 rm -f "$STATE/retry"

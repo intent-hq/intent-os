@@ -118,7 +118,23 @@ stateDiagram-v2
 | Camera | Not supported (needs out-of-tree `facetimehd`). |
 | Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
-## 8. Later
+## 8. arm64 VM image (Apple silicon Macs)
+
+1. **Base:** Arch Linux ARM (`linux-aarch64`). Same packages and session as x86_64,
+   except the MacBook Air package and firmware.
+2. **Shape:** a ready-to-boot qcow2 disk, not an installer. CI runs the normal installer
+   in image mode onto loop devices inside an Arch Linux ARM container, with a generic
+   initramfs (no `autodetect`), then compresses the disk.
+3. **First boot:** `intent-os-firstboot.service` asks for the PIN and time zone on the
+   console before greetd starts.
+4. **Kernel name:** a pacman hook copies `/boot/Image` to `/boot/vmlinuz-linux` so
+   `grub-mkconfig` (and grub-btrfs snapshots) find it.
+5. **Updates:** Arch Linux ARM has no archive, so arm64 devices follow normal mirrors.
+   Intent OS packages come from the signed `repo-aarch64` release.
+6. **Tests:** `tests/smoke-arm64.sh` boots the image, answers the first-boot prompts,
+   waits for Intent, and unlocks. It uses KVM when the runner has it, else TCG.
+
+## 9. Later
 
 1. Permanent rollback command (today: boot a snapshot from the GRUB menu).
 2. Disk encryption. The Air has no TPM, so LUKS would need a boot passphrase.

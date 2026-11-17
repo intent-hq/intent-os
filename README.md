@@ -29,6 +29,22 @@ Click the network name in the top bar to change Wi-Fi. Install coding agents fro
 Intent. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
+## Run in a VM on an Apple silicon Mac (UTM)
+
+The release also has an arm64 disk image, `intent-os-*-arm64.qcow2`.
+
+1. Install [UTM](https://mac.getutm.app/) and download the `.qcow2` file.
+2. In UTM, choose **Create a New Virtual Machine → Virtualize → Other**, and skip the
+   ISO. Give it at least 4 GB of memory and 4 CPU cores.
+3. Before you start it, open the VM settings:
+   - **Drives:** delete the empty drive, then **New… → Import** the `.qcow2` (VirtIO).
+   - **Display:** choose `virtio-gpu-pci` (not `virtio-ramfb`).
+   - **Network:** Shared Network.
+4. Start the VM. On first boot it asks for a PIN and a time zone, then opens Intent.
+
+The arm64 image uses Arch Linux ARM. It updates from Arch Linux ARM mirrors, which have
+no tested snapshot like the x86_64 build.
+
 ## Layout
 
 | Path | Purpose |
@@ -48,6 +64,8 @@ console.
 ```sh
 make image    # packages + ISO in out/ (Docker, x86_64)
 make smoke    # QEMU install-and-boot test (needs KVM, OVMF, socat)
+make image-arm64   # arm64 packages + VM image in out/vm (aarch64 host)
+make smoke-arm64   # QEMU first-boot test of the VM image
 make lint     # shellcheck
 ```
 

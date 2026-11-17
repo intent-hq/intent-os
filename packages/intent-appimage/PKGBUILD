@@ -6,14 +6,17 @@ pkgname=intent-appimage
 pkgver=2.346.0
 pkgrel=1
 pkgdesc="Intent AppImage (seed for the self-updating owner copy)"
-arch=(x86_64)
+arch=(x86_64 aarch64)
 url="https://intentapp.dev/"
 license=(Apache-2.0)
 depends=(fuse2 gtk3 nss libnotify libxss libxtst xdg-utils at-spi2-core libsecret alsa-lib git)
 options=(!strip !debug)
-source=("Intent-${pkgver}.AppImage::https://github.com/intent-hq/cloudlands-releases/releases/download/v${pkgver}/Intent-${pkgver}.AppImage")
+_base="https://github.com/intent-hq/cloudlands-releases/releases/download/v${pkgver}"
+source_x86_64=("Intent-${pkgver}.AppImage::${_base}/Intent-${pkgver}.AppImage")
+source_aarch64=("Intent-${pkgver}.AppImage::${_base}/Intent-${pkgver}-arm64.AppImage")
 noextract=("Intent-${pkgver}.AppImage")
-sha256sums=('a3ed9332020bccd6c4d8eff5fe3f6f49938d82e901bcafe2b729e22702e50fe5')
+sha256sums_x86_64=('a3ed9332020bccd6c4d8eff5fe3f6f49938d82e901bcafe2b729e22702e50fe5')
+sha256sums_aarch64=('9d4a5fee921ab2d09fb6c34786cb81ed5bd4c8cd9976fe85ed91c6d9f19b1f62')
 
 package() {
   install -Dm755 "Intent-${pkgver}.AppImage" "$pkgdir/usr/share/intent-os/Intent.AppImage"

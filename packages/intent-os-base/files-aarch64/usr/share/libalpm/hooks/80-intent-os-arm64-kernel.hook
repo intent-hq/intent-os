@@ -1,0 +1,12 @@
+# Arch Linux ARM installs the kernel as /boot/Image; grub-mkconfig pairs
+# vmlinuz-linux with initramfs-linux.img.
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = linux-aarch64
+
+[Action]
+Description = Exposing the arm64 kernel to GRUB...
+When = PostTransaction
+Exec = /usr/bin/cp -f /boot/Image /boot/vmlinuz-linux

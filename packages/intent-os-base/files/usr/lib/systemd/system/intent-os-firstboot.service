@@ -1,0 +1,20 @@
+[Unit]
+Description=Intent OS first boot: choose the PIN
+ConditionPathExists=/var/lib/intent-os/firstboot
+After=systemd-user-sessions.service plymouth-quit-wait.service
+Before=greetd.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/intent-os/firstboot
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

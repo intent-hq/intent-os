@@ -1,8 +1,10 @@
 #!/bin/bash
-# Runs inside a privileged archlinux:base-devel container with the repo at /src.
+# Runs inside a privileged container with the repo at /src: archlinux:base-devel
+# on x86_64, an Arch Linux ARM image on aarch64 (see the Makefile).
 #   packages: build Intent OS pacman packages into out/repo
-#   iso:      build the installer ISO (netinstall) into out/iso
-#   all:      both
+#   iso:      build the installer ISO (netinstall) into out/iso   (x86_64)
+#   vm:       build a ready-to-boot VM disk image into out/vm     (aarch64)
+#   all:      packages plus the image for this architecture
 # Env: ARCHIVE_DATE (YYYY/MM/DD), BUILD_ID, INTENT_OS_SIGNING_KEY (optional,
 # ASCII-armored secret key), HOST_UID (chown output for the host user).
 set -euo pipefail
@@ -10,7 +12,9 @@ set -euo pipefail
 SRC=/src
 OUT=$SRC/out
 WORK=/tmp/intent-os
-PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
+ARCH=$(uname -m)
+PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update)
+[[ $ARCH == x86_64 ]] && PACKAGES+=(intent-os-hw-macbookair6)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
 : "${BUILD_ID:?set BUILD_ID}"
@@ -21,8 +25,16 @@ log() { printf '\n==> %s\n' "$*"; }
 prepare() {
   log "Preparing build container"
   pacman-key --init >/dev/null
-  pacman-key --populate archlinux >/dev/null
-  pacman -Syu --noconfirm --needed archiso git grub erofs-utils mtools dosfstools >/dev/null
+  if [[ $ARCH == aarch64 ]]; then
+    pacman-key --populate archlinuxarm >/dev/null
+    # The imported rootfs keeps CheckSpace, which fails on overlay mounts.
+    sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
+    pacman -Syu --noconfirm --needed base-devel git arch-install-scripts btrfs-progs \
+      dosfstools gptfdisk qemu-img >/dev/null
+  else
+    pacman-key --populate archlinux >/dev/null
+    pacman -Syu --noconfirm --needed archiso git grub erofs-utils mtools dosfstools >/dev/null
+  fi
   id builder >/dev/null 2>&1 || useradd -m builder
   mkdir -p "$OUT" "$WORK"
   SIGN_ARGS=() REPO_SIGN_ARGS=() KEY_ID=""
@@ -210,12 +222,78 @@ CONF
   fi
 }
 
+# arm64 VM image: install with the normal installer onto two loop devices
+# (ESP and btrfs root) inside a sparse raw disk, then compress to qcow2. The
+# device asks for the PIN on first boot.
+build_vm_image() {
+  log "Building the $ARCH VM disk image"
+  local img=$WORK/intent-os.raw esp root s1 n1 s2 n2
+  rm -rf "$OUT/vm" && mkdir -p "$OUT/vm"
+  rm -f "$img" && truncate -s 16G "$img"
+  sgdisk -n1:0:+512M -t1:ef00 -c1:EFI -n2:0:0 -t2:8300 -c2:intent-os "$img" >/dev/null
+  read -r s1 n1 < <(partx -g -o START,SECTORS -n 1 "$img")
+  read -r s2 n2 < <(partx -g -o START,SECTORS -n 2 "$img")
+  esp=$(losetup -f --show -o $((s1 * 512)) --sizelimit $((n1 * 512)) "$img")
+  root=$(losetup -f --show -o $((s2 * 512)) --sizelimit $((n2 * 512)) "$img")
+  # shellcheck disable=SC2064
+  trap "umount -R /mnt 2>/dev/null; losetup -d $esp $root 2>/dev/null" EXIT
+
+  mkdir -p /etc/intent-os
+  local intent_siglevel="Optional TrustAll"
+  if [[ -d $OUT/keyring ]]; then
+    cp "$OUT/keyring/intent-os.gpg" "$OUT/keyring/intent-os-trusted" /etc/intent-os/
+    intent_siglevel="Required DatabaseRequired"
+  fi
+  cat > /etc/intent-os/pacman-install.conf <<CONF
+[options]
+Architecture = $ARCH
+SigLevel = Required DatabaseOptional
+ParallelDownloads = 5
+
+[intent-os]
+SigLevel = $intent_siglevel
+Server = https://github.com/intent-hq/intent-os/releases/download/repo-\$arch
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+[alarm]
+Include = /etc/pacman.d/mirrorlist
+CONF
+  cat > "$WORK/vm.conf" <<CONF
+IMAGE=1
+FIRSTBOOT=1
+ESP_DEV=$esp
+ROOT_DEV=$root
+TIMEZONE=UTC
+REPO=file://$OUT/repo
+CONSOLE=console=ttyAMA0,115200 console=tty0
+CONF
+  INTENT_OS_INSTALL_CONFIG=$WORK/vm.conf bash "$SRC/iso/airootfs/usr/local/bin/intent-os-install"
+  losetup -d "$esp" "$root"
+  trap - EXIT
+
+  local qcow=$OUT/vm/intent-os-$BUILD_ID-arm64.qcow2 size limit=$((1900 * 1024 * 1024))
+  qemu-img convert -c -O qcow2 "$img" "$qcow"
+  rm -f "$img"
+  (cd "$OUT/vm" && sha256sum ./*.qcow2 > SHA256SUMS)
+  size=$(stat -c %s "$qcow")
+  log "VM image size: $((size / 1024 / 1024)) MiB (limit 1900 MiB)"
+  (( size <= limit )) || { echo "error: VM image is over GitHub's 2 GiB asset limit" >&2; exit 1; }
+}
+
 prepare
 case ${1:-all} in
   packages) build_packages ;;
   iso) build_iso ;;
-  all) build_packages; build_iso ;;
-  *) echo "usage: $0 packages|iso|all" >&2; exit 2 ;;
+  vm) build_vm_image ;;
+  all)
+    build_packages
+    if [[ $ARCH == aarch64 ]]; then build_vm_image; else build_iso; fi ;;
+  *) echo "usage: $0 packages|iso|vm|all" >&2; exit 2 ;;
 esac
 [[ -n ${HOST_UID:-} ]] && chown -R "$HOST_UID" "$OUT"
 log "Done: $OUT"
