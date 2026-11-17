@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Build arm64 packages and VM image
+      - name: Build arm64 packages and ISO
         env:
           INTENT_OS_SIGNING_KEY: ${{ secrets.INTENT_OS_SIGNING_KEY }}
         run: make image-arm64 ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
@@ -117,7 +117,7 @@ jobs:
         with:
           name: image-arm64
           path: |
-            out/vm
+            out/iso
             out/repo
           if-no-files-found: error
           compression-level: 0
@@ -143,7 +143,7 @@ jobs:
           fi
       - name: Install QEMU
         run: sudo apt-get update -q && sudo apt-get install -yq qemu-system-arm qemu-efi-aarch64 qemu-utils socat imagemagick
-      - name: First boot, PIN, and boot into Intent
+      - name: Install and boot into Intent
         timeout-minutes: 80
         run: make smoke-arm64
       - uses: actions/upload-artifact@v4
@@ -174,12 +174,12 @@ jobs:
         with:
           name: image-arm64
           path: out-arm64
-      - name: Publish ISO and arm64 VM image
+      - name: Publish ISOs
         run: |
-          cat out/iso/SHA256SUMS out-arm64/vm/SHA256SUMS > SHA256SUMS
-          gh release create "iso-$BUILD_ID" out/iso/*.iso out-arm64/vm/*.qcow2 SHA256SUMS \
+          cat out/iso/SHA256SUMS out-arm64/iso/SHA256SUMS > SHA256SUMS
+          gh release create "iso-$BUILD_ID" out/iso/*.iso out-arm64/iso/*.iso SHA256SUMS \
             --title "Intent OS $BUILD_ID" \
-            --notes "x86_64 netinstall ISO and arm64 VM disk image (UTM on Apple silicon). Arch snapshot $ARCHIVE_DATE (x86_64). $(grep INTENT_VERSION out/channel.env)"
+            --notes "Netinstall ISOs for x86_64 and aarch64 (UEFI PCs, Macs with Intel, and VMs such as UTM on Apple silicon). Arch snapshot $ARCHIVE_DATE (x86_64). $(grep INTENT_VERSION out/channel.env)"
       - name: Publish package repos
         if: hashFiles('out/keyring/intent-os.gpg') != ''
         run: |

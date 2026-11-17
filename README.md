@@ -31,20 +31,19 @@ console.
 
 ## Run in a VM on an Apple silicon Mac (UTM)
 
-The release also has a small arm64 disk image, `intent-os-*-arm64.qcow2` (a few hundred
-MB). Like the x86_64 netinstall, it downloads the rest on first boot.
+Each release has two netinstall ISOs: `*-x86_64.iso` and `*-aarch64.iso`. On an Apple
+silicon Mac, use the `aarch64` one.
 
-1. Install [UTM](https://mac.getutm.app/) and download the `.qcow2` file.
-2. In UTM, choose **Create a New Virtual Machine → Virtualize → Other**, and skip the
-   ISO. Give it at least 4 GB of memory and 4 CPU cores.
-3. Before you start it, open the VM settings:
-   - **Drives:** delete the empty drive, then **New… → Import** the `.qcow2` (VirtIO).
-   - **Display:** choose `virtio-gpu-pci` (not `virtio-ramfb`).
-   - **Network:** Shared Network.
-4. Start the VM. On first boot it asks for a PIN and a time zone, downloads Intent OS
-   (about 1 GB), restarts, and opens Intent.
+1. Install [UTM](https://mac.getutm.app/) and download `intent-os-*-aarch64.iso`.
+2. In UTM, choose **Create a New Virtual Machine → Virtualize → Linux**, pick the ISO as
+   the boot image, and give it at least 4 GB of memory, 4 CPU cores and a 32 GB disk.
+3. In the VM settings, set **Display** to `virtio-gpu-pci` (not `virtio-ramfb`).
+4. Start the VM. The installer works as on a PC: network, disk (the VM's disk), PIN,
+   time zone, `erase`.
+5. When it says Intent OS is installed, eject the ISO in UTM (CD/DVD → Clear) and press
+   Enter to restart.
 
-The arm64 image uses Arch Linux ARM. It updates from Arch Linux ARM mirrors, which have
+The aarch64 build uses Arch Linux ARM. It updates from Arch Linux ARM mirrors, which have
 no tested snapshot like the x86_64 build.
 
 ## Layout
@@ -66,8 +65,8 @@ no tested snapshot like the x86_64 build.
 ```sh
 make image    # packages + ISO in out/ (Docker, x86_64)
 make smoke    # QEMU install-and-boot test (needs KVM, OVMF, socat)
-make image-arm64   # arm64 packages + VM image in out/vm (aarch64 host)
-make smoke-arm64   # QEMU first-boot test of the VM image
+make image-arm64   # aarch64 packages + ISO in out/ (aarch64 host)
+make smoke-arm64   # QEMU install-and-boot test of the aarch64 ISO
 make lint     # shellcheck
 ```
 

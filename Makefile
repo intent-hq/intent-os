@@ -3,7 +3,8 @@
 ARCHIVE_DATE ?= $(shell cat channel/archive-date)
 BUILD_ID ?= $(shell date -u +%Y%m%d%H%M)-local
 IMAGE ?= archlinux:base-devel
-ISO = $(firstword $(wildcard out/iso/*.iso))
+ISO = $(firstword $(wildcard out/iso/*-x86_64.iso))
+ISO_ARM64 = $(firstword $(wildcard out/iso/*-aarch64.iso))
 
 DOCKER = docker run --rm --privileged --platform linux/amd64 \
 	-v "$(CURDIR)":/src -w /src \
@@ -14,7 +15,6 @@ DOCKER = docker run --rm --privileged --platform linux/amd64 \
 # arm64: an Arch Linux ARM rootfs imported as a Docker image (aarch64 host).
 ALARM_IMAGE ?= intent-os-alarm:latest
 ALARM_ROOTFS ?= http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
-VM = $(firstword $(wildcard out/vm/*.qcow2))
 
 DOCKER_ARM = docker run --rm --privileged --platform linux/arm64 \
 	-v "$(CURDIR)":/src -v /dev:/dev -w /src \
@@ -41,7 +41,7 @@ image-arm64: alarm-image
 	$(DOCKER_ARM) all
 
 smoke-arm64:
-	tests/smoke-arm64.sh "$(VM)" out/smoke
+	tests/smoke.sh "$(ISO_ARM64)" out/smoke
 
 lint:
 	shellcheck -x build/*.sh tests/*.sh iso/airootfs/usr/local/bin/intent-os-install \

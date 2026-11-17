@@ -64,9 +64,13 @@ load_auto_config() {
     return 0
   fi
   TIMEZONE=${TIMEZONE:-UTC}
-  if [[ -w /dev/ttyS0 ]]; then
-    exec > >(tee /dev/ttyS0) 2>&1
-  fi
+  local serial
+  for serial in /dev/ttyS0 /dev/ttyAMA0; do
+    if [[ -w $serial ]] && stty -F "$serial" >/dev/null 2>&1; then
+      exec > >(tee "$serial") 2>&1
+      break
+    fi
+  done
 }
 
 check_uefi() {
@@ -295,7 +299,11 @@ configure_system() {
   if [[ -n $CONSOLE ]]; then
     cmdline+=" $CONSOLE"
   elif (( AUTO && ! IMAGE )); then
-    cmdline+=" console=tty0 console=ttyS0,115200"
+    if [[ $ARCH == aarch64 ]]; then
+      cmdline+=" console=tty0 console=ttyAMA0,115200"
+    else
+      cmdline+=" console=tty0 console=ttyS0,115200"
+    fi
   fi
   echo "$HOSTNAME_DEFAULT" > "$MNT/etc/hostname"
   echo "KEYMAP=us" > "$MNT/etc/vconsole.conf"

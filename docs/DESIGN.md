@@ -118,23 +118,20 @@ stateDiagram-v2
 | Camera | Not supported (needs out-of-tree `facetimehd`). |
 | Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
-## 8. arm64 VM image (Apple silicon Macs)
+## 8. aarch64 (UTM on Apple silicon, UEFI ARM machines)
 
-1. **Base:** Arch Linux ARM (`linux-aarch64`). Same packages and session as x86_64,
-   except the MacBook Air package and firmware.
-2. **Shape:** a small ready-to-boot qcow2 disk, the VM counterpart of the netinstall
-   ISO. CI runs the installer in image and bootstrap mode onto loop devices inside an
-   Arch Linux ARM container: kernel, network, GRUB and `intent-os-bootstrap` only, with
-   a generic initramfs. The build fails above 700 MiB (about 640 MiB today, close to the x86_64 netinstall).
-3. **First boot:** `intent-os-firstboot.service` (from `intent-os-bootstrap`) asks for
-   the PIN and time zone on the console, downloads Intent OS, sets up snapshots, GRUB
-   and services, and restarts into Intent.
-4. **Kernel name:** a pacman hook copies `/boot/Image` to `/boot/vmlinuz-linux` so
-   `grub-mkconfig` (and grub-btrfs snapshots) find it.
-5. **Updates:** Arch Linux ARM has no archive, so arm64 devices follow normal mirrors.
+1. **Same shape as x86_64:** a netinstall ISO with the same installer. One ISO per
+   architecture covers real hardware and VMs (UTM boots ISOs).
+2. **Base:** Arch Linux ARM (`linux-aarch64`). archiso is not packaged there, so the build
+   runs `mkarchiso` from the archiso Git tag in `build/in-container.sh` (`ARCHISO_REF`),
+   with the `uefi.grub` boot mode only. Live packages: `iso/packages.aarch64`.
+3. **Kernel name:** `intent-os-bootstrap` ships a pacman hook that hard-links
+   `/boot/Image` to `/boot/vmlinuz-linux`, the name mkarchiso, GRUB and grub-btrfs expect.
+4. **Updates:** Arch Linux ARM has no archive, so aarch64 devices follow normal mirrors.
    Intent OS packages come from the signed `repo-aarch64` release.
-6. **Tests:** `tests/smoke-arm64.sh` boots the image, answers the first-boot prompts,
-   waits for Intent, and unlocks. It uses KVM when the runner has it, else TCG.
+5. **Tests:** `tests/smoke.sh` runs the same install-and-boot test on the aarch64 ISO, with
+   KVM when the runner has it and TCG otherwise.
+6. **Not covered:** bare-metal Apple silicon (needs Asahi's boot chain).
 
 ## 9. Later
 
