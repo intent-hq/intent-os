@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs inside a privileged archlinux:base-devel container with the repo at /src.
 #   packages: build Intent OS pacman packages into out/repo
-#   iso:      build the offline installer ISO into out/iso
+#   iso:      build the installer ISO (netinstall) into out/iso
 #   all:      both
 # Env: ARCHIVE_DATE (YYYY/MM/DD), BUILD_ID, INTENT_OS_SIGNING_KEY (optional,
 # ASCII-armored secret key), HOST_UID (chown output for the host user).
@@ -11,7 +11,6 @@ SRC=/src
 OUT=$SRC/out
 WORK=/tmp/intent-os
 PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
-INSTALL_SET=(intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
 : "${BUILD_ID:?set BUILD_ID}"
@@ -23,7 +22,7 @@ prepare() {
   log "Preparing build container"
   pacman-key --init >/dev/null
   pacman-key --populate archlinux >/dev/null
-  pacman -Syu --noconfirm --needed archiso git >/dev/null
+  pacman -Syu --noconfirm --needed archiso git grub erofs-utils mtools dosfstools >/dev/null
   id builder >/dev/null 2>&1 || useradd -m builder
   mkdir -p "$OUT" "$WORK"
   SIGN_ARGS=() REPO_SIGN_ARGS=() KEY_ID=""
@@ -40,9 +39,6 @@ prepare() {
     mkdir -p "$OUT/keyring"
     gpg --batch --armor --export "$KEY_ID" > "$OUT/keyring/intent-os.gpg"
     echo "$KEY_ID:4:" > "$OUT/keyring/intent-os-trusted"
-    # The offline repo download verifies the signed intent-os repo.
-    pacman-key --add "$OUT/keyring/intent-os.gpg" >/dev/null
-    pacman-key --lsign-key "$KEY_ID" >/dev/null
   fi
 }
 
@@ -76,52 +72,91 @@ write_mirrorlist() {
   printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$ARCHIVE_DATE" > "$1"
 }
 
-offline_repo() {
-  local repo=$1 conf=$WORK/pinned.conf
-  log "Downloading the pinned package set ($ARCHIVE_DATE)"
-  write_mirrorlist "$WORK/mirrorlist"
-  cat > "$conf" <<CONF
-[options]
-Architecture = x86_64
-SigLevel = Required DatabaseOptional
-ParallelDownloads = 8
-
-[core]
-Include = $WORK/mirrorlist
-
-[extra]
-Include = $WORK/mirrorlist
-
-[intent-os]
-SigLevel = Optional TrustAll
-Server = file://$OUT/repo
-CONF
-  rm -rf "$WORK/db" && mkdir -p "$WORK/db" "$repo"
-  pacman --config "$conf" --dbpath "$WORK/db" -Sy >/dev/null
-  pacman --config "$conf" --dbpath "$WORK/db" --cachedir "$repo" -Sw --noconfirm "${INSTALL_SET[@]}"
-  rm -f "$repo"/*.sig
-  repo-add -q "$repo/intent-os-offline.db.tar.gz" "$repo"/*.pkg.tar.zst
+# intent-os-live: the MacBook Air wl driver built once for the live kernel,
+# plus Intel iwlwifi firmware only, so the USB stick needs no compiler,
+# headers or full firmware packages.
+build_live_package() {
+  log "Building the live Wi-Fi package"
+  pacman -S --noconfirm --needed linux linux-headers broadcom-wl-dkms \
+    linux-firmware-intel linux-firmware-atheros linux-firmware-mediatek >/dev/null
+  local linux_ver kdir wl dir=$WORK/live-pkg
+  linux_ver=$(pacman -Q linux | awk '{print $2}')
+  kdir=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/updates/dkms' ';' -print | head -n1)
+  wl=$(find "$kdir/updates/dkms" -name 'wl.ko*' | head -n1)
+  [[ -n $wl ]] || { echo "error: dkms did not build wl for $kdir" >&2; exit 1; }
+  rm -rf "$dir" "$WORK/live-repo"
+  mkdir -p "$dir/root" "$WORK/live-repo"
+  install -Dm644 "$wl" "$dir/root${wl}"
+  local conf
+  for conf in /usr/lib/modprobe.d/broadcom-wl*.conf; do
+    install -Dm644 "$conf" "$dir/root$conf"
+  done
+  mkdir -p "$dir/root/usr/lib/firmware"
+  # Wi-Fi files only: Intel iwlwifi, Qualcomm Atheros ath*k, MediaTek mt7x
+  # (no Bluetooth, GPU or SoC firmware from these packages).
+  (cd /usr/lib/firmware && find . \( -type f -o -type l \) \( \
+      -name 'iwlwifi-*' \
+      -o -path './ath9k_htc/*' -o -path './ath10k/*' -o -path './ath11k/*' \
+      -o -path './ath12k/*' -o -path './ath6k/*' -o -name 'htc_*.fw' \
+      -o \( \( -name 'mt7*' -o -name 'WIFI_*' \) ! -name '*BT*' \) \) \
+      -exec cp -a --parents {} "$dir/root/usr/lib/firmware" \;)
+  cat > "$dir/PKGBUILD" <<PKG
+pkgname=intent-os-live
+pkgver=1
+pkgrel=1
+pkgdesc="Intent OS live installer Wi-Fi: prebuilt wl driver and Wi-Fi firmware"
+arch=(x86_64)
+license=(custom)
+depends=("linux=$linux_ver")
+options=(!strip !debug)
+package() { cp -a "\$startdir/root/." "\$pkgdir/"; }
+PKG
+  # iwlwifi ships many API versions per chip; the driver loads the newest it
+  # supports, so the two newest per chip are enough.
+  local f
+  while read -r f; do rm -f "$dir/root/usr/lib/firmware/$f"; done < <(
+    cd "$dir/root/usr/lib/firmware" &&
+      find . -name 'iwlwifi-*.ucode*' | sed 's|^\./||' |
+      awk '{ n = $0; sub(/\.ucode.*$/, "", n); v = n; sub(/^.*-/, "", v); gsub(/[^0-9]/, "", v);
+             p = n; sub(/-[^-]*$/, "", p); print p "\t" (v == "" ? 0 : v) "\t" $0 }' |
+      sort -t $'\t' -k1,1 -k2,2nr |
+      awk -F '\t' '{ if (++seen[$1] > 2) print $3 }')
+  find "$dir/root/usr/lib/firmware" -xtype l -delete
+  chown -R builder "$dir" "$WORK/live-repo"
+  (cd "$dir" && sudo -u builder env PKGDEST="$WORK/live-repo" makepkg -fd --noconfirm >/dev/null)
+  repo-add -q "$WORK/live-repo/intent-os-live.db.tar.gz" "$WORK"/live-repo/*.pkg.tar.zst
 }
 
 build_iso() {
   log "Building installer ISO"
   local profile=$WORK/profile
   rm -rf "$profile" "$WORK/archiso"
-  cp -r /usr/share/archiso/configs/releng "$profile"
+  cp -r /usr/share/archiso/configs/baseline "$profile"
+  build_live_package
 
-  grep -v '^#' "$SRC/iso/packages.x86_64" >> "$profile/packages.x86_64"
+  # Our own package list and services; drop baseline's cloud and VM tooling.
+  cp "$SRC/iso/packages.x86_64" "$profile/packages.x86_64"
+  rm -rf "$profile/airootfs/etc/systemd/system/"*.wants \
+    "$profile/airootfs/etc/systemd/system/systemd-networkd-wait-online.service.d" \
+    "$profile/airootfs/etc/systemd/network" "$profile/airootfs/etc/systemd/networkd.conf.d" \
+    "$profile/airootfs/etc/systemd/resolved.conf.d" "$profile/airootfs/etc/ssh"
   cp -a "$SRC/iso/airootfs/." "$profile/airootfs/"
-
-  # NetworkManager replaces iwd and systemd-networkd in the live system.
-  find "$profile/airootfs/etc/systemd/system" \
-    \( -name 'iwd.service' -o -name 'systemd-networkd*' \) ! -type d -delete
+  mkdir -p "$profile/airootfs/etc/systemd/system/multi-user.target.wants"
   ln -sf /usr/lib/systemd/system/NetworkManager.service \
     "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+  # The installer needs no docs, translations or headers on the stick.
+  sed -i '/^\[options\]/a NoExtract = usr/share/locale/* usr/share/man/* usr/share/doc/* usr/share/info/* usr/share/gtk-doc/* usr/share/gir-1.0/* usr/include/* usr/share/i18n/*\nNoExtract = !usr/share/locale/locale.alias' "$profile/pacman.conf"
+  cat >> "$profile/pacman.conf" <<CONF
+
+[intent-os-live]
+SigLevel = Optional TrustAll
+Server = file://$WORK/live-repo
+CONF
 
   # Serial console for the QEMU boot test. Harmless on hardware.
   find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
     \( -name '*.conf' -o -name '*.cfg' \) \
-    -exec sed -i 's/archisosearchuuid=%ARCHISO_UUID%/& console=tty0 console=ttyS0,115200/' {} + 2>/dev/null
+    -exec sed -i 's/archisosearchuuid=%ARCHISO_UUID%/& console=tty0 console=ttyS0,115200/' {} + 2>/dev/null || true
 
   sed -i -E \
     -e 's/^iso_name=.*/iso_name="intent-os"/' \
@@ -135,24 +170,44 @@ build_iso() {
   local etc=$profile/airootfs/etc/intent-os
   mkdir -p "$etc"
   write_mirrorlist "$etc/mirrorlist"
-  cat > "$etc/pacman-offline.conf" <<'CONF'
-[options]
-Architecture = x86_64
-SigLevel = Never
-ParallelDownloads = 5
-
-[intent-os-offline]
-Server = file:///opt/intent-os/repo
-CONF
+  # The installer downloads from the pinned Arch snapshot and the signed
+  # intent-os repo; the ISO carries no packages of its own.
+  local intent_siglevel="Optional TrustAll"
   if [[ -d $OUT/keyring ]]; then
     cp "$OUT/keyring/intent-os.gpg" "$OUT/keyring/intent-os-trusted" "$etc/"
+    intent_siglevel="Required DatabaseRequired"
   fi
+  cat > "$etc/pacman-install.conf" <<CONF
+[options]
+Architecture = x86_64
+SigLevel = Required DatabaseOptional
+ParallelDownloads = 5
 
-  offline_repo "$profile/airootfs/opt/intent-os/repo"
+[intent-os]
+SigLevel = $intent_siglevel
+Server = https://github.com/intent-hq/intent-os/releases/download/repo-\$arch
+
+[core]
+Include = /etc/intent-os/mirrorlist
+
+[extra]
+Include = /etc/intent-os/mirrorlist
+CONF
 
   rm -rf "$OUT/iso"
   mkarchiso -v -w "$WORK/archiso" -o "$OUT/iso" "$profile"
   (cd "$OUT/iso" && sha256sum ./*.iso > SHA256SUMS)
+  log "Largest parts of the live system"
+  du -x -m --max-depth=5 "$WORK/archiso/x86_64/airootfs/usr" 2>/dev/null | sort -n | tail -n 25
+  # The netinstall image must stay small; fail here, not at publish.
+  local iso size limit=$((560 * 1024 * 1024))
+  iso=$(ls "$OUT"/iso/*.iso)
+  size=$(stat -c %s "$iso")
+  log "ISO size: $((size / 1024 / 1024)) MiB (limit 560 MiB)"
+  if (( size > limit )); then
+    echo "error: ISO is $((size / 1024 / 1024)) MiB; the netinstall image must stay under 560 MiB" >&2
+    exit 1
+  fi
 }
 
 prepare

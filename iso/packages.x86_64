@@ -1,7 +1,20 @@
-# Added to the archiso releng package list.
+# Complete package list for the live installer (built from archiso's
+# baseline profile). Keep it to what intent-os-install uses.
+base
+linux
+mkinitcpio
+mkinitcpio-archiso
+syslinux
+arch-install-scripts
+btrfs-progs
+dosfstools
+gptfdisk
 networkmanager
 wpa_supplicant
 jq
-# MacBook Air BCM4360 Wi-Fi for the installer; releng no longer ships it.
-broadcom-wl-dkms
-linux-headers
+# Wi-Fi only: prebuilt MacBook Air wl driver plus Intel, Atheros and
+# MediaTek Wi-Fi firmware (intent-os-live, built in build/in-container.sh),
+# and the small Broadcom and Realtek sets.
+intent-os-live
+linux-firmware-broadcom
+linux-firmware-realtek

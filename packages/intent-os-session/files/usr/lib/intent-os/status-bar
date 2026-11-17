@@ -1,7 +1,8 @@
 #!/bin/bash
 # swaybar status (i3bar protocol): network (click for the Wi-Fi picker),
 # battery, clock, device controls.
-# A dot on Restart means an installed system update needs a reboot.
+# Controls are icons: refresh = restart Intent, circular arrow = restart the
+# device (amber when an installed update needs it), power = shut down.
 # Intent shows its own update prompt.
 set -u
 
@@ -24,31 +25,50 @@ handle_clicks() {
   done
 }
 
+# Material Design icons from Symbols Nerd Font Mono (ttf-nerd-fonts-symbols-mono).
+I_WIFI=($'\U000f092e' $'\U000f091f' $'\U000f0922' $'\U000f0925' $'\U000f0928')
+I_WIRED=$'\U000f0200'
+I_OFFLINE=$'\U000f05aa'
+I_BATTERY=($'\U000f007a' $'\U000f007b' $'\U000f007c' $'\U000f007d' $'\U000f007e'
+  $'\U000f007f' $'\U000f0080' $'\U000f0081' $'\U000f0082' $'\U000f0079')
+I_CHARGING=$'\U000f0084'
+I_RESTART_INTENT=$'\U000f0450'
+I_REBOOT=$'\U000f0709'
+I_POWER=$'\U000f0425'
+
 network() {
-  local name type
+  local name type signal
   while IFS=: read -r name type; do
     case $type in
-      802-11-wireless) echo "$name"; return ;;
-      802-3-ethernet) echo "Wired"; return ;;
+      802-11-wireless)
+        signal=$(nmcli -t -f IN-USE,SIGNAL dev wifi list --rescan no 2>/dev/null | sed -n 's/^\*://p' | head -n1)
+        echo "${I_WIFI[$(( (${signal:-0} + 24) / 25 ))]}  $name"
+        return ;;
+      802-3-ethernet) echo "$I_WIRED"; return ;;
     esac
   done < <(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null)
-  echo "Offline"
+  echo "$I_OFFLINE"
 }
 
 battery() {
-  local ps cap status
+  local ps cap status i
   for ps in /sys/class/power_supply/*; do
     [[ $(cat "$ps/type" 2>/dev/null) == Battery ]] || continue
     cap=$(cat "$ps/capacity" 2>/dev/null) || continue
     status=$(cat "$ps/status" 2>/dev/null)
-    [[ $status == Charging ]] && echo "${cap}% charging" || echo "${cap}%"
+    if [[ $status == Charging ]]; then
+      echo "$I_CHARGING ${cap}%"
+    else
+      i=$(( cap / 10 - 1 )); (( i < 0 )) && i=0; (( i > 9 )) && i=9
+      echo "${I_BATTERY[$i]} ${cap}%"
+    fi
     return
   done
 }
 
 block() {
-  jq -cn --arg name "$1" --arg text "$2" --arg color "$3" \
-    '{name: $name, full_text: $text, separator: false, separator_block_width: 18}
+  jq -cn --arg name "$1" --arg text "$2" --arg color "$3" --argjson gap "${4:-18}" \
+    '{name: $name, full_text: $text, separator: false, separator_block_width: $gap}
      + (if $color == "" then {} else {color: $color} end)'
 }
 
@@ -58,21 +78,18 @@ printf '{"version":1,"click_events":true}\n[\n[]\n'
 dim="#a1a1aa"
 hint="#fbbf24"
 while :; do
-  intent_label="Restart Intent" intent_color=$dim
-  reboot_label="Restart" reboot_color=$dim
-  if [[ -e /run/intent-os/reboot-required ]]; then
-    reboot_label="Restart •" reboot_color=$hint
-  fi
+  reboot_color=$dim
+  [[ -e /run/intent-os/reboot-required ]] && reboot_color=$hint
   bat=$(battery)
   blocks=(
     "$(block network "$(network)" "")"
   )
   [[ -n $bat ]] && blocks+=("$(block battery "$bat" "")")
   blocks+=(
-    "$(block clock "$(date '+%a %-d %b  %H:%M')" "")"
-    "$(block restart-intent "$intent_label" "$intent_color")"
-    "$(block reboot "$reboot_label" "$reboot_color")"
-    "$(block poweroff "Shut down" "$dim")"
+    "$(block clock "$(date '+%a %-d %b  %H:%M')" "" 22)"
+    "$(block restart-intent " $I_RESTART_INTENT " "$dim" 6)"
+    "$(block reboot " $I_REBOOT " "$reboot_color" 6)"
+    "$(block poweroff " $I_POWER " "$dim" 0)"
   )
   (IFS=,; printf ',[%s]\n' "${blocks[*]}")
   sleep 5

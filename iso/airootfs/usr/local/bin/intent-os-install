@@ -1,20 +1,22 @@
 #!/bin/bash
-# Intent OS installer. Erases one disk and installs Intent OS from the
-# package repo on this USB stick, so it works offline.
+# Intent OS installer. Erases one disk and installs Intent OS. Packages come
+# from the Arch snapshot this image was tested with and the signed intent-os
+# repo, so the installer needs a network connection.
 #
 # Unattended mode (tests): QEMU passes KEY=VALUE lines through fw_cfg
 # opt/intent-os/install with DISK, PIN, TIMEZONE, AFTER=poweroff|reboot, and
-# optional HW (a hardware package to force, so tests cover its install).
+# optional HW (a hardware package to force, so tests cover its install), and
+# optional REPO (an intent-os repo URL, so tests install the packages under test).
 set -euo pipefail
 
 OWNER=intent
 HOSTNAME_DEFAULT=intent-os
 FWCFG=/sys/firmware/qemu_fw_cfg/by_name/opt/intent-os/install/raw
-OFFLINE_CONF=/etc/intent-os/pacman-offline.conf
+INSTALL_CONF=/etc/intent-os/pacman-install.conf
 MNT=/mnt
 BTRFS_OPTS=noatime,compress=zstd:1
 
-AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot HW=""
+AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot HW="" REPO=""
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -31,6 +33,7 @@ load_auto_config() {
       TIMEZONE) [[ -f /usr/share/zoneinfo/$value ]] && TIMEZONE=$value ;;
       AFTER) [[ $value =~ ^(poweroff|reboot)$ ]] && AFTER=$value ;;
       HW) [[ $value =~ ^intent-os-hw-[a-z0-9]+$ ]] && HW=$value ;;
+      REPO) [[ $value =~ ^https?://[A-Za-z0-9.:/_-]+$ ]] && REPO=$value ;;
     esac
   done < "$FWCFG"
   [[ -n $DISK && -n $PIN ]] || die "unattended config needs DISK and PIN"
@@ -51,7 +54,7 @@ online() {
 setup_network() {
   online && { say "Network: connected."; return; }
   say "Network"
-  echo "Intent needs a network after install for agents and updates."
+  echo "The installer downloads Intent OS, so it needs a network."
   local ssids=() i choice pw
   while :; do
     mapfile -t ssids < <(nmcli -t -f SSID dev wifi list --rescan yes 2>/dev/null | awk 'NF && !seen[$0]++' | head -n 15)
@@ -60,8 +63,7 @@ setup_network() {
     else
       for i in "${!ssids[@]}"; do printf '  %2d) %s\n' $((i + 1)) "${ssids[$i]}"; done
     fi
-    read -rp "Network number, r to rescan, s to skip: " choice
-    [[ $choice == s ]] && return
+    read -rp "Network number, or r to rescan: " choice
     [[ $choice == r ]] && continue
     if ! [[ $choice =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#ssids[@]} )); then
       continue
@@ -142,7 +144,7 @@ partition() {
   wipefs -af "$DISK"
   sgdisk --zap-all "$DISK"
   sgdisk -n1:0:+1G -t1:ef00 -c1:EFI -n2:0:0 -t2:8300 -c2:intent-os "$DISK"
-  partprobe "$DISK" || true
+  partx -u "$DISK" 2>/dev/null || true
   udevadm settle
   ESP=$(part 1) ROOT=$(part 2)
   mkfs.fat -F32 -n EFI "$ESP"
@@ -170,13 +172,30 @@ hardware_packages() {
   esac
 }
 
+trust_intent_os_key() {
+  if [[ ! -s /etc/pacman.d/gnupg/pubring.gpg ]]; then
+    pacman-key --init >/dev/null
+    pacman-key --populate archlinux >/dev/null
+  fi
+  [[ -f /etc/intent-os/intent-os-trusted ]] || return 0
+  local fpr
+  fpr=$(cut -d: -f1 /etc/intent-os/intent-os-trusted)
+  pacman-key --add /etc/intent-os/intent-os.gpg >/dev/null
+  pacman-key --lsign-key "$fpr" >/dev/null
+}
+
 install_packages() {
-  say "Installing packages"
-  local hw
+  say "Downloading and installing Intent OS"
+  local hw conf=$INSTALL_CONF
   hw=$(hardware_packages)
   [[ -n $hw ]] && echo "Hardware support: $hw"
+  if [[ -n $REPO ]]; then
+    conf=$(mktemp)
+    sed "s|^Server = https://github.com/intent-hq/intent-os/.*|Server = $REPO|" "$INSTALL_CONF" > "$conf"
+  fi
+  trust_intent_os_key
   # shellcheck disable=SC2086
-  pacstrap -C "$OFFLINE_CONF" -G -M "$MNT" intent-os-base intent-os-session intent-os-update $hw
+  pacstrap -C "$conf" -G -M "$MNT" intent-os-base intent-os-session intent-os-update $hw
   genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' >> "$MNT/etc/fstab"
 }
 
@@ -297,6 +316,9 @@ main() {
     pick_timezone
     confirm_erase
   fi
+  local tries=60
+  until online || (( --tries == 0 )); do sleep 1; done
+  online || die "no network connection; the installer downloads Intent OS"
   partition
   install_packages
   configure_system
