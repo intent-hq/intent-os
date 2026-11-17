@@ -1,0 +1,12 @@
+#!/bin/bash
+# Default browser for Intent OS: hand web pages (a CLI's sign-in page, a
+# terminal link) to the running Intent, which shows them in a sign-in window.
+set -u
+url=${1:-}
+case $url in
+  http://* | https://*) ;;
+  *) echo "intent-os-open: only http and https links open here" >&2; exit 1 ;;
+esac
+app="$HOME/.local/lib/intent-os/Intent.AppImage"
+# The running Intent receives this launch's arguments and this copy exits.
+exec "$app" "--open-url=$url" >/dev/null 2>&1

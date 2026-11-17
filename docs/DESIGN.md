@@ -24,7 +24,7 @@ base layer.
 
 ## 3. Use Intent as written
 
-No changes to `cloudlands-fe` or `intentd`.
+Few changes to `cloudlands-fe` or `intentd`: a hidden-menu-bar option and the sign-in window (§4.7).
 
 | Need | How |
 |---|---|
@@ -60,7 +60,12 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
 6. **Wi-Fi.** Clicking the network name opens a dropdown (`fuzzel`) under it: nearby
    networks with signal, a password prompt only for new secured networks, and Turn
    Wi-Fi off/on. Failures show in a swaynag bar.
-7. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
+7. **Web pages.** There is no browser. `intent-os-open` is the default browser
+   (`BROWSER`, `xdg-open`): it passes `http(s)` links to the running Intent
+   (`--open-url=`), which shows them in a small sign-in window. A CLI sign-in
+   (`claude auth login`) finishes there, and the window closes when the page returns
+   to the CLI. Escape closes it.
+8. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
    Ctrl+Cmd+Q locks. The power key suspends (it sits next to Delete on the Air).
 
 ## 5. Supervision

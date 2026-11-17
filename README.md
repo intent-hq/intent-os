@@ -26,7 +26,7 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
 
 The PIN unlocks the device and is the password for `sudo` in Intent's terminal.
 Click the network name in the top bar to change Wi-Fi. Install coding agents from
-Intent. For emergencies only, Ctrl+Alt+F2 opens a text
+Intent; their sign-in pages open in a small Intent window. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
 ## Run in a VM on an Apple silicon Mac (UTM)
