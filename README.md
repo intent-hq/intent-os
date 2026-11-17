@@ -37,7 +37,9 @@ silicon Mac, use the `aarch64` one.
 1. Install [UTM](https://mac.getutm.app/) and download `intent-os-*-aarch64.iso`.
 2. In UTM, choose **Create a New Virtual Machine → Virtualize → Linux**, pick the ISO as
    the boot image, and give it at least 4 GB of memory, 4 CPU cores and a 32 GB disk.
-3. In the VM settings, set **Display** to `virtio-gpu-pci` (not `virtio-ramfb`).
+3. In the VM settings, set **Display** to `virtio-gpu-pci` (not `virtio-ramfb`) and
+   **Network → Network Mode** to **Emulated VLAN**. (Shared Network needs macOS vmnet
+   permission and fails in some UTM builds with "cannot create vmnet interface".)
 4. Start the VM. The installer works as on a PC: network, disk (the VM's disk), PIN,
    time zone, `erase`.
 5. When it says Intent OS is installed, eject the ISO in UTM (CD/DVD → Clear) and press
