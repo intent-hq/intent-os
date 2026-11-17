@@ -348,6 +348,13 @@ copy_network() {
 
 finish() {
   ln -sf ../run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
+  if (( IMAGE )); then
+    # Ship no package downloads, and hand freed blocks back to the sparse
+    # disk file so the compressed image stays small.
+    rm -rf "$MNT"/var/cache/pacman/pkg/*
+    fstrim -v "$MNT" || true
+    fstrim -v "$MNT/efi" || true
+  fi
   sync
   umount -R "$MNT"
   say "Intent OS is installed."

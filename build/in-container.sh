@@ -277,7 +277,7 @@ CONF
   trap - EXIT
 
   local qcow=$OUT/vm/intent-os-$BUILD_ID-arm64.qcow2 size limit=$((1900 * 1024 * 1024))
-  qemu-img convert -c -O qcow2 "$img" "$qcow"
+  qemu-img convert -c -O qcow2 -o compression_type=zstd "$img" "$qcow"
   rm -f "$img"
   (cd "$OUT/vm" && sha256sum ./*.qcow2 > SHA256SUMS)
   size=$(stat -c %s "$qcow")
