@@ -300,9 +300,9 @@ configure_system() {
     cmdline+=" $CONSOLE"
   elif (( AUTO && ! IMAGE )); then
     if [[ $ARCH == aarch64 ]]; then
-      cmdline+=" console=tty0 console=ttyAMA0,115200"
+      cmdline+=" console=ttyAMA0,115200 console=tty0"
     else
-      cmdline+=" console=tty0 console=ttyS0,115200"
+      cmdline+=" console=ttyS0,115200 console=tty0"
     fi
   fi
   echo "$HOSTNAME_DEFAULT" > "$MNT/etc/hostname"

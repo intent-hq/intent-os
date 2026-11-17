@@ -163,6 +163,10 @@ build_iso() {
     # Arch Linux ARM repos; UEFI GRUB only (no BIOS on arm64).
     cp /etc/pacman.conf "$profile/pacman.conf"
     sed -i "/^bootmodes=(/,/)/c\\bootmodes=('uefi.grub')" "$profile/profiledef.sh"
+    # The Arch Linux ARM kernel cannot mount EROFS; use squashfs for the live root.
+    sed -i -e 's/^airootfs_image_type=.*/airootfs_image_type="squashfs"/' \
+      -e "s/^airootfs_image_tool_options=.*/airootfs_image_tool_options=('-comp' 'xz' '-b' '1M')/" \
+      "$profile/profiledef.sh"
   else
     cp -r /usr/share/archiso/configs/baseline "$profile"
     build_live_package
@@ -197,10 +201,11 @@ Server = file://$WORK/live-repo
 CONF
   fi
 
-  # Serial console for the QEMU boot test. Harmless on hardware.
+  # Serial console for the QEMU boot test. tty0 comes last so it is the main
+  # console: boot errors and rescue prompts appear on screen, not only on serial.
   find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
     \( -name '*.conf' -o -name '*.cfg' \) \
-    -exec sed -i "s/archisosearchuuid=%ARCHISO_UUID%/& console=tty0 console=$console,115200/" {} + 2>/dev/null || true
+    -exec sed -i "s/archisosearchuuid=%ARCHISO_UUID%/& console=$console,115200 console=tty0/" {} + 2>/dev/null || true
 
   sed -i -E \
     -e 's/^iso_name=.*/iso_name="intent-os"/' \
