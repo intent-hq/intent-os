@@ -156,7 +156,7 @@ build_iso() {
     local _m _have=(); for _m in "${grubmodules[@]}"; do [[ -e "/usr/lib/grub/${grub_target}/${_m}.mod" ]] \&\& _have+=("$_m"); done; grubmodules=("${_have[@]}")' \
       "$mkarchiso"
     grep -q '_have+=' "$mkarchiso" || { echo "error: could not patch mkarchiso GRUB modules" >&2; exit 1; }
-    console=ttyAMA0 limit_mib=700
+    console=ttyAMA0 limit_mib=450
     # Arch Linux ARM repos; UEFI GRUB only (no BIOS on arm64).
     cp /etc/pacman.conf "$profile/pacman.conf"
     sed -i "/^bootmodes=(/,/)/c\\bootmodes=('uefi.grub')" "$profile/profiledef.sh"
