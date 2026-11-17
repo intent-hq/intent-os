@@ -192,12 +192,12 @@ jobs:
         run: |
           for arch in x86_64 aarch64; do
             gh release view "repo-$arch" >/dev/null 2>&1 || \
-              gh release create "repo-$arch" --title "Intent OS package repo ($arch)" --notes "pacman repo. Do not download by hand."
+              gh release create "repo-$arch" --title "Intent OS package repo ($arch)" --notes "pacman repo. Do not download by hand." --latest=false
           done
           gh release upload repo-x86_64 out/repo/* --clobber
           gh release upload repo-aarch64 out-arm64/repo/* --clobber
       - name: Advance update channel
         run: |
           gh release view channel >/dev/null 2>&1 || \
-            gh release create channel --title "Intent OS update channel" --notes "Newest build that passed the boot test."
+            gh release create channel --title "Intent OS update channel" --notes "Newest build that passed the boot test." --latest=false
           gh release upload channel out/channel.env --clobber
