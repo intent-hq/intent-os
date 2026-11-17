@@ -64,7 +64,7 @@ build_packages() {
     cp -r "$SRC/packages/$p" "$WORK/pkgbuild/$p"
     chown -R builder "$WORK/pkgbuild/$p"
     (cd "$WORK/pkgbuild/$p" &&
-      sudo -u builder env PKGDEST="$OUT/repo" SRCDEST="$WORK/src" \
+      sudo -u builder env PKGDEST="$OUT/repo" SRCDEST="$WORK/src" PKGEXT=.pkg.tar.zst \
         makepkg -fd --noconfirm "${SIGN_ARGS[@]}")
   done
   repo-add -q "${REPO_SIGN_ARGS[@]}" "$OUT/repo/intent-os.db.tar.gz" "$OUT"/repo/*.pkg.tar.zst
@@ -135,7 +135,7 @@ PKG
       awk -F '\t' '{ if (++seen[$1] > 2) print $3 }')
   find "$dir/root/usr/lib/firmware" -xtype l -delete
   chown -R builder "$dir" "$WORK/live-repo"
-  (cd "$dir" && sudo -u builder env PKGDEST="$WORK/live-repo" makepkg -fd --noconfirm >/dev/null)
+  (cd "$dir" && sudo -u builder env PKGDEST="$WORK/live-repo" PKGEXT=.pkg.tar.zst makepkg -fd --noconfirm >/dev/null)
   repo-add -q "$WORK/live-repo/intent-os-live.db.tar.gz" "$WORK"/live-repo/*.pkg.tar.zst
 }
 
