@@ -109,6 +109,8 @@ build_iso() {
   rm -rf "$profile" "$WORK/archiso"
   cp -r /usr/share/archiso/configs/releng "$profile"
 
+  # Same reduced firmware set as intent-os-base, to keep the ISO under 2 GiB.
+  sed -i '/^linux-firmware/d' "$profile/packages.x86_64"
   grep -v '^#' "$SRC/iso/packages.x86_64" >> "$profile/packages.x86_64"
   cp -a "$SRC/iso/airootfs/." "$profile/airootfs/"
 
@@ -153,6 +155,15 @@ CONF
   rm -rf "$OUT/iso"
   mkarchiso -v -w "$WORK/archiso" -o "$OUT/iso" "$profile"
   (cd "$OUT/iso" && sha256sum ./*.iso > SHA256SUMS)
+  # GitHub release assets must be under 2 GiB; fail here, not at publish.
+  local iso size limit=$((1900 * 1024 * 1024))
+  iso=$(ls "$OUT"/iso/*.iso)
+  size=$(stat -c %s "$iso")
+  log "ISO size: $((size / 1024 / 1024)) MiB (limit 1900 MiB)"
+  if (( size > limit )); then
+    echo "error: ISO is $((size / 1024 / 1024)) MiB; GitHub release assets must stay under 2 GiB" >&2
+    exit 1
+  fi
 }
 
 prepare

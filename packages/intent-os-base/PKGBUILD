@@ -7,7 +7,12 @@ arch=(any)
 url="https://github.com/intent-hq/intent-os"
 license=(Apache-2.0)
 depends=(
-  base linux linux-firmware intel-ucode amd-ucode
+  base linux intel-ucode amd-ucode
+  # Laptop and desktop firmware only. The full linux-firmware set (Qualcomm,
+  # Mellanox, NVIDIA, Marvell, ...) would push the ISO past GitHub's 2 GiB limit.
+  linux-firmware-intel linux-firmware-amdgpu linux-firmware-amd linux-firmware-radeon
+  linux-firmware-atheros linux-firmware-broadcom linux-firmware-mediatek linux-firmware-realtek
+  linux-firmware-cirrus linux-firmware-ti linux-firmware-other
   btrfs-progs dosfstools grub efibootmgr grub-btrfs inotify-tools snapper snap-pac
   networkmanager wpa_supplicant sudo polkit zram-generator
   pipewire pipewire-pulse pipewire-alsa wireplumber mesa noto-fonts noto-fonts-emoji
