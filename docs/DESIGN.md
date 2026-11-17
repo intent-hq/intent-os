@@ -48,7 +48,11 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
 4. **Controls** are in the top-right of the bar. Restart and Shut down ask once in a
    swaynag bar (no password). A polkit rule lets `wheel` reboot and power off from user
    services.
-5. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
+5. **No terminal app.** Intent is the only way to install and sign in to coding agents,
+   using its own terminals. This is a deliberate test of Intent as the whole computer;
+   gaps found here become small Intent changes, not more OS apps. Emergency access only:
+   Ctrl+Alt+F2 opens a text console (user `intent`, the PIN).
+6. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
    Ctrl+Cmd+Q locks. The power key suspends (it sits next to Delete on the Air).
 
 ## 5. Supervision
