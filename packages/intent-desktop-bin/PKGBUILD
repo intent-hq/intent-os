@@ -1,0 +1,24 @@
+# Repackages the released Intent Linux build. No source changes.
+# CI bumps pkgver and sha256sums from the cloudlands-releases stable channel.
+pkgname=intent-desktop-bin
+pkgver=2.310.5
+pkgrel=1
+pkgdesc="Intent: local-first workspace for coordinating AI coding agents"
+arch=(x86_64)
+url="https://intentapp.dev/"
+license=(Apache-2.0)
+depends=(gtk3 nss libnotify libxss libxtst xdg-utils at-spi2-core util-linux-libs libsecret alsa-lib git)
+provides=(intent)
+conflicts=(intent)
+options=(!strip !debug)
+source=("https://github.com/intent-hq/cloudlands-releases/releases/download/v${pkgver}/intent_${pkgver}_amd64.deb")
+sha256sums=('6c9102ff1c84a885ca11bb1508f17e829716fb4dca53c1c5828d5a5de32ccd16')
+
+package() {
+  bsdtar -xf data.tar.xz -C "$pkgdir"
+  install -d "$pkgdir/usr/bin"
+  ln -s /opt/Intent/intent "$pkgdir/usr/bin/intent"
+  # Arch kernels allow unprivileged user namespaces, so no SUID sandbox.
+  chmod 0755 "$pkgdir/opt/Intent/chrome-sandbox"
+  rm -f "$pkgdir/opt/Intent/resources/apparmor-profile"
+}

@@ -1,0 +1,9 @@
+[Unit]
+Description=Disable spurious ACPI wake sources (MacBook Air 6,x)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/intent-os/hw/macbookair6-wakeup
+
+[Install]
+WantedBy=multi-user.target

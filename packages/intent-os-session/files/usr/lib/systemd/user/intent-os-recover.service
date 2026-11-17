@@ -1,0 +1,6 @@
+[Unit]
+Description=Recover when Intent cannot start
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/intent-os/recover

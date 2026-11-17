@@ -1,0 +1,10 @@
+#!/bin/sh
+vars="XDG_SESSION_ID WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE DISPLAY ELECTRON_OZONE_PLATFORM_HINT WLR_NO_HARDWARE_CURSORS"
+# shellcheck disable=SC2086
+systemctl --user import-environment $vars
+# shellcheck disable=SC2086
+dbus-update-activation-environment --systemd $vars
+# Lock first. Intent loads behind the lock while the owner enters the PIN.
+intent-os-lock
+# shellcheck disable=SC2086
+systemctl --user start intent-os-session.target

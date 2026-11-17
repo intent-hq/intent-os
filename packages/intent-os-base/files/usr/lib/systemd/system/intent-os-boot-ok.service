@@ -1,0 +1,8 @@
+[Unit]
+Description=Mark this boot as good (Intent reached the foreground)
+RequiresMountsFor=/efi
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/intent-os/mark-boot-ok
+StandardOutput=journal+console

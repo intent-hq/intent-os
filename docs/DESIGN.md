@@ -1,4 +1,4 @@
-# Intent OS design (draft)
+# Intent OS design
 
 ## 1. Goal
 
@@ -7,111 +7,108 @@ Show no other apps. Keep the device updated and recover from failure without the
 
 ## 2. Packaging model
 
-Follow the Omarchy pattern, but ship only the base layer.
+Follow the Omarchy pattern (Arch, btrfs + snapper, ISO installer), but ship only the
+base layer.
 
-1. **A pacman repo is the product.** All Intent OS parts are pacman packages in an
-   `intent-os` repo hosted on GitHub Releases:
-   1. `intent-os-base`: meta-package. Kernel, firmware, NetworkManager, PipeWire, Mesa,
-      btrfs tools, snapper.
-   2. `intent-os-session`: compositor config, session units, lock screen, device-control
-      helper, supervisor.
-   3. `intent-os-update`: staged update timer, snapshot hooks, boot counting.
-   4. `intent-desktop-bin`: repackages the released Linux build of Intent (Electron app
-      plus the bundled `intentd` sidecar). No source changes.
-   5. `intent-os-hw-*`: optional hardware packages, for example `intent-os-hw-macbookair`
-      (Broadcom `wl`, `mbpfan`, FaceTime HD camera).
-2. **The ISO is only an installer.** An archiso profile boots a live image that runs a
-   thin installer: pick a disk, join Wi-Fi, set the owner PIN. The installer runs
-   `archinstall` with a fixed config, adds the `intent-os` repo, and installs the
-   packages above. After that, the ISO is no longer needed.
-3. **Updates are only `pacman -Syu`.** Because everything is a package, OS and Intent
-   updates use one path.
+1. **pacman packages are the product.** Everything is in five packages (see README).
+2. **The ISO is an offline installer.** The ISO carries a complete pacman repo for one
+   pinned Arch snapshot plus the Intent OS packages. The installer needs no network and
+   always installs the exact set that passed the boot test.
+3. **Updates are `pacman -Syu`** against the pinned snapshot, plus the signed
+   `intent-os` repo for Intent OS and Intent packages.
 
 ## 3. Use Intent as written
 
-| Need | Existing Intent feature | Change needed |
-|---|---|---|
-| Linux build, x64 and arm64 | AppImage and deb in `electron-builder.yml` | None. Repackage the release. |
-| Daemon lifecycle | Electron starts the bundled `intentd` sidecar | None. |
-| Terminals, sudo, agent install | Integrated terminals | None. |
-| Fullscreen restore | `window.ts` saves and restores fullscreen | None. |
-| One updater | In-app updater has a `disabled` channel | Set `disabled` by default on Intent OS (config or env). Small. |
-| Device controls (top right) | Linux uses the native frame today | Optional small gated hook. See section 5. |
-| Restart-needed hint | None | Read a flag file. Small, same hook. |
+No changes to `cloudlands-fe` or `intentd`.
 
-## 4. Session stack
+| Need | How |
+|---|---|
+| Intent build | `intent-desktop-bin` unpacks the released `intent_<v>_amd64.deb` into `/opt/Intent`. `bump-intent.yml` follows the stable channel. |
+| `intentd` | Electron starts its bundled sidecar as usual. |
+| One updater | `prepare-intent` sets `updateChannel: "disabled"` in `~/.config/Intent/local-prefs.json` before every start. |
+| No app menu bar | Same file: `menuBarAutoHide: true` on first start. |
+| Secrets | No keyring daemon. Electron falls back to its basic store; `intentd` uses none. |
+
+## 4. Session
 
 ```text
-systemd -> greetd (autologin owner) -> sway (kiosk config) -> Intent (Wayland, fullscreen)
-                                         |-> swaylock-style PIN lock (ext-session-lock)
-                                         |-> swayidle (lock on idle and resume)
-                                         |-> intent-os-controls (layer-shell, top right)
+greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
+   session-start: swaylock first, then intent-os-session.target
+       intent.service      Intent, supervised
+       intent-os-idle      lock after 5 min idle and before sleep
+   swaybar (top, 24 px)    network, battery, clock, Restart Intent, Restart, Shut down
 ```
 
-1. **Compositor: sway with a locked-down config.** No bar, no launcher, no keybinds that
-   open apps. One rule: Intent windows are fullscreen. Sway is preferred over `cage`
-   because `cage` lacks the session-lock and layer-shell protocols that the PIN lock and
-   the device controls need.
-2. **Intent runs native Wayland** (`--ozone-platform=wayland`). Fallback to XWayland on
-   GPUs where this fails.
-3. **PIN lock.** The PIN is the owner's Linux password. One secret covers lock, sudo, and
-   (when present) TPM2 disk unlock. The lock screen draws a numeric keypad.
+1. **sway, not cage.** The PIN lock needs `ext-session-lock`, which cage lacks. sway also
+   gives a built-in bar, so device controls need no extra process.
+2. **Lock first.** `swaylock -f` returns only once the screen is locked, then Intent
+   starts behind the lock. It is never visible before the PIN.
+3. **PIN = the owner's Linux password.** swaylock checks it through PAM. It is also the
+   `sudo` password. Root is locked.
+4. **Controls** are in the top-right of the bar. Restart and Shut down ask once in a
+   swaynag bar (no password). A polkit rule lets `wheel` reboot and power off from user
+   services.
+5. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
+   Ctrl+Cmd+Q locks. The power key suspends (it sits next to Delete on the Air).
 
-## 5. Device controls
+## 5. Supervision
 
-Two options:
+```mermaid
+stateDiagram-v2
+  [*] --> Starting
+  Starting --> Healthy: Intent window visible (≤200 s)
+  Starting --> Starting: check fails, restart (max 3 in 5 min)
+  Starting --> Recover: start limit hit
+  Healthy --> Starting: Intent exits or Restart Intent
+  Recover --> Reboot: fewer than 2 reboots in 30 min
+  Recover --> AskOwner: otherwise (swaynag: Try again, Restart)
+  Reboot --> [*]
+```
 
-1. **Layer-shell overlay (no Intent change).** A tiny GTK4 layer-shell window in the top
-   right shows Restart Intent, Restart, Shut down. It can overlap Intent UI.
-2. **Hook in Intent (one small FE change).** When `INTENT_OS=1`, Linux windows render
-   these buttons where window controls go and call a local helper.
+1. `intent.service` runs `ExecStartPost=intent-health`, which waits for a visible sway
+   window with app id or class `intent`. A failed check fails the start.
+2. On success it starts `intent-os-boot-ok.service`, which sets `boot_success=1` in
+   `/efi/intent-os/grubenv`.
+3. GRUB resets the flag on every boot. If a boot never reached a healthy Intent, the next
+   boot shows the menu for 10 s, including **Intent OS snapshots** (grub-btrfs). Snapshots
+   boot read-only through an overlay.
 
-Start with option 1. Move to option 2 only if the overlap is bad.
+## 6. Updates
 
-Actions use `systemctl --user restart intent-session`, `systemctl reboot`, and
-`systemctl poweroff`. A polkit rule lets the owner run them with no prompt.
+1. **Staged snapshot.** Devices use `archive.archlinux.org/repos/<date>`. CI builds a
+   nightly image on yesterday's snapshot, installs and boots it in QEMU, and only then
+   publishes `channel.env` (date + build id). Devices never move to a date that has not
+   passed the test, and never move backwards.
+2. **When.** `intent-os-update.timer` checks hourly. It runs only when the session's
+   logind IdleHint is set (5 min idle) and the device is on AC power.
+3. **Snapshots.** snap-pac takes btrfs pre/post snapshots around every pacman run.
+4. **Intent** is only downloaded during the update. It installs in `prepare-intent`
+   before the next Intent start, so files never change under a running app (and running
+   agents are never stopped for an update). A dot on **Restart Intent** shows it is
+   waiting.
+5. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
+   firmware, systemd, glibc, Mesa, sway, or Wi-Fi driver updates. A dot on **Restart**
+   shows it. The device never reboots by itself for an update.
 
-## 6. Supervision
+## 7. MacBook Air, Early 2014 (MacBookAir6,1 / 6,2)
 
-1. `intent-session.service` (user unit) runs Intent. `Restart=always`,
-   `StartLimitBurst=3`.
-2. Health check: a watcher on sway IPC confirms an `app_id=Intent` window exists and is
-   fullscreen within N seconds of each start.
-3. Escalation: three failed starts -> reboot. Boot counting (systemd-boot `+3` entries or
-   a counter in `/var/lib/intent-os`) stops loops: after two failed boots, boot the last
-   good snapshot.
+| Part | Support |
+|---|---|
+| Boot | UEFI. GRUB installs to the fallback path (`--removable`), so no NVRAM writes. |
+| Graphics | Intel HD 5000 (Haswell), Mesa `crocus`. VA-API through `libva-intel-driver`. |
+| Wi-Fi | Broadcom BCM4360. `broadcom-wl`, prebuilt for the repo kernel; also on the ISO. |
+| Suspend | Works. XHC1 and ARPT wake sources are off to stop instant wake-up. |
+| Keyboard, trackpad | `hid_apple` (media keys first), `bcm5974`; tap, natural scroll, click-finger. |
+| Audio | Cirrus CS4208 through PipeWire. |
+| Brightness | `intel_backlight` and `smc::kbd_backlight` through brightnessctl. |
+| Fan | SMC firmware control. `mbpfan` not included (AUR only). |
+| Camera | Not supported (needs out-of-tree `facetimehd`). |
+| Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
-## 7. Updates and rollback
+## 8. Later
 
-Arch is rolling, so we stage it.
-
-1. **Pinned mirror.** Devices point at a dated Arch Linux Archive snapshot, not live
-   mirrors. CI advances the date only after the QEMU smoke test passes (boot, Intent
-   fullscreen, terminal opens).
-2. **Snapshots.** btrfs root plus snapper. A pacman hook takes a snapshot before every
-   transaction. Boot entries list snapshots (limine or grub-btrfs), as Omarchy does.
-3. **When.** A systemd timer runs updates only when logind reports idle, on AC power.
-4. **Reboot needed.** If the running kernel is not installed anymore, or core libraries
-   changed, write `/run/intent-os/reboot-required`. The restart control shows a hint.
-   Never reboot by itself.
-
-## 8. Hardware
-
-| Target | Base | Status |
-|---|---|---|
-| x86_64 Intel and AMD | Arch Linux | Phase 1 |
-| 11-inch MacBook Air (2013-2015) | Arch + `intent-os-hw-macbookair` | First device |
-| Apple Silicon M1/M2 | Asahi (Fedora Asahi Remix today) | Later. Not Arch. |
-| Generic arm64 | Arch Linux ARM | Later. Board-specific. |
-
-Keep `intent-os-session` and `intent-os-update` distro-neutral (systemd units, sway
-config, shell scripts). Then an Apple Silicon image can reuse them on the Asahi base.
-
-## 9. Open questions
-
-1. Exact first MacBook Air model and RAM. 4 GB is tight for Electron plus local agents;
-   remote agents should be the default there.
-2. Disk encryption. Old Macs have no TPM, so LUKS would need a separate boot passphrase.
-3. Owner-installed packages versus clean rollback. Proposal: user tools go in `$HOME`
-   (mise, npm prefix) so system rollback does not remove them.
-4. Factory reset and backup.
+1. Permanent rollback command (today: boot a snapshot from the GRUB menu).
+2. Disk encryption. The Air has no TPM, so LUKS would need a boot passphrase.
+3. Other hardware packages. Apple Silicon on an Asahi base, reusing the session and
+   update packages.
+4. Crash-recovery case in the QEMU test (needs a guest agent).

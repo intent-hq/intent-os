@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+env=/efi/intent-os/grubenv
+[ -f "$env" ] || grub-editenv "$env" create
+grub-editenv "$env" set boot_success=1
+echo "INTENT_OS_BOOT_OK"

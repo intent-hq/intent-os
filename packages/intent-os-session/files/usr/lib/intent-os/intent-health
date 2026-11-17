@@ -1,0 +1,19 @@
+#!/bin/bash
+# Pass when an Intent window is visible in sway. Then mark the boot good.
+set -u
+deadline=$((SECONDS + 200))
+while (( SECONDS < deadline )); do
+  if swaymsg -t get_tree 2>/dev/null | jq -e '
+      [.. | objects | select(.type? == "con" or .type? == "floating_con")
+          | select(((.app_id // "") | test("intent"; "i"))
+                   or ((.window_properties.class // "") | test("intent"; "i")))
+          | select(.visible == true)] | length > 0' >/dev/null; then
+    echo "intent-os: Intent window is visible"
+    rm -f "${XDG_STATE_HOME:-$HOME/.local/state}/intent-os/recoveries"
+    systemctl start --no-block intent-os-boot-ok.service || true
+    exit 0
+  fi
+  sleep 2
+done
+echo "intent-os: no Intent window after 200s" >&2
+exit 1

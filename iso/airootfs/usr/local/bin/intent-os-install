@@ -1,0 +1,305 @@
+#!/bin/bash
+# Intent OS installer. Erases one disk and installs Intent OS from the
+# package repo on this USB stick, so it works offline.
+#
+# Unattended mode (tests): QEMU passes KEY=VALUE lines through fw_cfg
+# opt/intent-os/install with DISK, PIN, TIMEZONE, and AFTER=poweroff|reboot.
+set -euo pipefail
+
+OWNER=intent
+HOSTNAME_DEFAULT=intent-os
+FWCFG=/sys/firmware/qemu_fw_cfg/by_name/opt/intent-os/install/raw
+OFFLINE_CONF=/etc/intent-os/pacman-offline.conf
+MNT=/mnt
+BTRFS_OPTS=noatime,compress=zstd:1
+
+AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot
+
+say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+die() { printf '\n\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
+
+load_auto_config() {
+  modprobe -q qemu_fw_cfg 2>/dev/null || true
+  [[ -r $FWCFG ]] || return 0
+  AUTO=1
+  local key value
+  while IFS='=' read -r key value; do
+    case $key in
+      DISK) [[ $value =~ ^/dev/[a-z0-9]+$ ]] && DISK=$value ;;
+      PIN) [[ $value =~ ^[0-9]{4,12}$ ]] && PIN=$value ;;
+      TIMEZONE) [[ -f /usr/share/zoneinfo/$value ]] && TIMEZONE=$value ;;
+      AFTER) [[ $value =~ ^(poweroff|reboot)$ ]] && AFTER=$value ;;
+    esac
+  done < "$FWCFG"
+  [[ -n $DISK && -n $PIN ]] || die "unattended config needs DISK and PIN"
+  TIMEZONE=${TIMEZONE:-UTC}
+  if [[ -w /dev/ttyS0 ]]; then
+    exec > >(tee /dev/ttyS0) 2>&1
+  fi
+}
+
+check_uefi() {
+  [[ -d /sys/firmware/efi/efivars ]] || die "boot this USB stick in UEFI mode (hold Option at the chime and pick EFI Boot)"
+}
+
+online() {
+  [[ $(nmcli -t -f CONNECTIVITY general 2>/dev/null) == full ]]
+}
+
+setup_network() {
+  online && { say "Network: connected."; return; }
+  say "Network"
+  echo "Intent needs a network after install for agents and updates."
+  local ssids=() i choice pw
+  while :; do
+    mapfile -t ssids < <(nmcli -t -f SSID dev wifi list --rescan yes 2>/dev/null | awk 'NF && !seen[$0]++' | head -n 15)
+    if (( ${#ssids[@]} == 0 )); then
+      echo "No Wi-Fi networks found."
+    else
+      for i in "${!ssids[@]}"; do printf '  %2d) %s\n' $((i + 1)) "${ssids[$i]}"; done
+    fi
+    read -rp "Network number, r to rescan, s to skip: " choice
+    [[ $choice == s ]] && return
+    [[ $choice == r ]] && continue
+    if ! [[ $choice =~ ^[0-9]+$ ]] || (( choice < 1 || choice > ${#ssids[@]} )); then
+      continue
+    fi
+    read -rsp "Password for ${ssids[$((choice - 1))]} (empty if open): " pw; echo
+    if nmcli dev wifi connect "${ssids[$((choice - 1))]}" ${pw:+password "$pw"} >/dev/null; then
+      sleep 2
+      online && { echo "Connected."; return; }
+    fi
+    echo "Could not connect. Try again."
+  done
+}
+
+live_disk() {
+  findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null | sed -E 's/p?[0-9]+$//'
+}
+
+pick_disk() {
+  local live disks=() i choice
+  live=$(live_disk || true)
+  mapfile -t disks < <(lsblk -dpno NAME,TYPE,RM | awk '$2 == "disk" {print $1}' | grep -vxF "${live:-none}" | grep -Ev '/dev/(loop|sr|zram)')
+  (( ${#disks[@]} )) || die "no disk found"
+  say "Disk"
+  for i in "${!disks[@]}"; do
+    printf '  %d) %s\n' $((i + 1)) "$(lsblk -dno NAME,SIZE,MODEL "${disks[$i]}")"
+  done
+  while :; do
+    read -rp "Disk number to erase: " choice
+    [[ $choice =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#disks[@]} )) && break
+  done
+  DISK=${disks[$((choice - 1))]}
+}
+
+pick_pin() {
+  local a b
+  say "PIN"
+  echo "Use 4 to 12 digits. You enter it to unlock this device and for sudo."
+  while :; do
+    read -rsp "PIN: " a; echo
+    [[ $a =~ ^[0-9]{4,12}$ ]] || { echo "Use 4 to 12 digits."; continue; }
+    read -rsp "Confirm PIN: " b; echo
+    [[ $a == "$b" ]] && break
+    echo "The PINs do not match."
+  done
+  PIN=$a
+}
+
+pick_timezone() {
+  local tz
+  say "Time zone"
+  while :; do
+    read -rp "Time zone, for example America/Los_Angeles [UTC]: " tz
+    tz=${tz:-UTC}
+    [[ -f /usr/share/zoneinfo/$tz ]] && break
+    echo "Unknown time zone."
+  done
+  TIMEZONE=$tz
+}
+
+confirm_erase() {
+  say "Ready"
+  echo "Disk:      $DISK ($(lsblk -dno SIZE,MODEL "$DISK"))"
+  echo "Time zone: $TIMEZONE"
+  echo
+  echo "Everything on $DISK will be erased."
+  local answer
+  read -rp "Type erase to install: " answer
+  [[ $answer == erase ]] || die "cancelled"
+}
+
+part() {
+  [[ $DISK =~ [0-9]$ ]] && echo "${DISK}p$1" || echo "${DISK}$1"
+}
+
+partition() {
+  say "Partitioning $DISK"
+  umount -R "$MNT" 2>/dev/null || true
+  wipefs -af "$DISK"
+  sgdisk --zap-all "$DISK"
+  sgdisk -n1:0:+1G -t1:ef00 -c1:EFI -n2:0:0 -t2:8300 -c2:intent-os "$DISK"
+  partprobe "$DISK" || true
+  udevadm settle
+  ESP=$(part 1) ROOT=$(part 2)
+  mkfs.fat -F32 -n EFI "$ESP"
+  mkfs.btrfs -f -L intent-os "$ROOT"
+
+  mount "$ROOT" "$MNT"
+  local sv
+  for sv in @ @home @snapshots @log @pkg; do btrfs subvolume create "$MNT/$sv"; done
+  umount "$MNT"
+  mount -o "$BTRFS_OPTS,subvol=@" "$ROOT" "$MNT"
+  mkdir -p "$MNT"/{efi,home,.snapshots,var/log,var/cache/pacman/pkg}
+  mount -o "$BTRFS_OPTS,subvol=@home" "$ROOT" "$MNT/home"
+  mount -o "$BTRFS_OPTS,subvol=@snapshots" "$ROOT" "$MNT/.snapshots"
+  mount -o "$BTRFS_OPTS,subvol=@log" "$ROOT" "$MNT/var/log"
+  mount -o "$BTRFS_OPTS,subvol=@pkg" "$ROOT" "$MNT/var/cache/pacman/pkg"
+  mount -o umask=0077 "$ESP" "$MNT/efi"
+}
+
+hardware_packages() {
+  local product
+  product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
+  case $product in
+    MacBookAir6,1|MacBookAir6,2) echo intent-os-hw-macbookair6 ;;
+  esac
+}
+
+install_packages() {
+  say "Installing packages"
+  local hw
+  hw=$(hardware_packages)
+  [[ -n $hw ]] && echo "Hardware support: $hw"
+  # shellcheck disable=SC2086
+  pacstrap -C "$OFFLINE_CONF" -G -M "$MNT" intent-os-base intent-os-session intent-os-update $hw
+  genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' >> "$MNT/etc/fstab"
+}
+
+configure_pacman() {
+  local conf=$MNT/etc/pacman.conf
+  install -Dm644 /etc/intent-os/mirrorlist "$MNT/etc/pacman.d/intent-os-mirrorlist"
+  sed -i 's|^Include = /etc/pacman.d/mirrorlist|Include = /etc/pacman.d/intent-os-mirrorlist|' "$conf"
+  if [[ -f /etc/intent-os/intent-os.gpg ]]; then
+    install -Dm644 /etc/intent-os/intent-os.gpg "$MNT/usr/share/pacman/keyrings/intent-os.gpg"
+    install -Dm644 /etc/intent-os/intent-os-trusted "$MNT/usr/share/pacman/keyrings/intent-os-trusted"
+    cat >> "$conf" <<'EOF'
+
+[intent-os]
+SigLevel = Required DatabaseRequired
+Server = https://github.com/intent-hq/intent-os/releases/download/repo-$arch
+EOF
+  else
+    cat >> "$conf" <<'EOF'
+
+# Intent OS packages update from a signed repo. This image was built without
+# a signing key, so only Arch packages update automatically.
+#[intent-os]
+#SigLevel = Required DatabaseRequired
+#Server = https://github.com/intent-hq/intent-os/releases/download/repo-$arch
+EOF
+  fi
+}
+
+configure_system() {
+  say "Configuring"
+  local cmdline="quiet loglevel=3"
+  (( AUTO )) && cmdline+=" console=tty0 console=ttyS0,115200"
+  echo "$HOSTNAME_DEFAULT" > "$MNT/etc/hostname"
+  echo "KEYMAP=us" > "$MNT/etc/vconsole.conf"
+  echo "LANG=en_US.UTF-8" > "$MNT/etc/locale.conf"
+  sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"
+  sed -i -E \
+    -e 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="Intent OS"/' \
+    -e "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"$cmdline\"/" \
+    "$MNT/etc/default/grub"
+  sed -i 's/^#\?GRUB_BTRFS_SUBMENUNAME=.*/GRUB_BTRFS_SUBMENUNAME="Intent OS snapshots"/' \
+    "$MNT/etc/default/grub-btrfs/config" 2>/dev/null || true
+  configure_pacman
+
+  local hw_units=""
+  [[ -n $(hardware_packages) ]] && hw_units="intent-os-macbookair6-wakeup.service"
+
+  arch-chroot "$MNT" /bin/bash -euo pipefail -s -- "$TIMEZONE" "$OWNER" "$hw_units" <<'CHROOT'
+tz=$1 owner=$2 hw_units=$3
+ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
+hwclock --systohc || true
+locale-gen
+useradd -m -G wheel -s /bin/bash "$owner"
+passwd -l root
+pacman-key --init
+pacman-key --populate archlinux
+[[ -f /usr/share/pacman/keyrings/intent-os.gpg ]] && pacman-key --populate intent-os
+mkinitcpio -P
+grub-install --target=x86_64-efi --efi-directory=/efi --boot-directory=/boot --removable
+mkdir -p /efi/intent-os
+grub-editenv /efi/intent-os/grubenv create
+grub-editenv /efi/intent-os/grubenv set boot_success=1
+grub-mkconfig -o /boot/grub/grub.cfg
+systemctl enable NetworkManager systemd-resolved systemd-timesyncd greetd \
+  fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer $hw_units
+systemctl set-default graphical.target
+CHROOT
+  printf '%s:%s\n' "$OWNER" "$PIN" | arch-chroot "$MNT" chpasswd
+}
+
+configure_snapper() {
+  say "Setting up snapshots"
+  umount "$MNT/.snapshots"
+  rmdir "$MNT/.snapshots"
+  arch-chroot "$MNT" snapper --no-dbus -c root create-config /
+  btrfs subvolume delete "$MNT/.snapshots"
+  mkdir "$MNT/.snapshots"
+  mount -o "$BTRFS_OPTS,subvol=@snapshots" "$ROOT" "$MNT/.snapshots"
+  chmod 750 "$MNT/.snapshots"
+  sed -i -E \
+    -e 's/^TIMELINE_CREATE=.*/TIMELINE_CREATE="no"/' \
+    -e 's/^NUMBER_LIMIT=.*/NUMBER_LIMIT="10"/' \
+    -e 's/^NUMBER_LIMIT_IMPORTANT=.*/NUMBER_LIMIT_IMPORTANT="5"/' \
+    "$MNT/etc/snapper/configs/root"
+  arch-chroot "$MNT" snapper --no-dbus -c root create -d "Intent OS installed" -c number
+}
+
+copy_network() {
+  local dir=/etc/NetworkManager/system-connections
+  compgen -G "$dir/*.nmconnection" >/dev/null || return 0
+  install -d -m700 "$MNT$dir"
+  cp -a "$dir"/*.nmconnection "$MNT$dir/"
+}
+
+finish() {
+  ln -sf ../run/systemd/resolve/stub-resolv.conf "$MNT/etc/resolv.conf"
+  sync
+  umount -R "$MNT"
+  say "Intent OS is installed."
+  if (( AUTO )); then
+    echo "INTENT_OS_INSTALL_OK"
+    systemctl "$AFTER"
+    exit 0
+  fi
+  read -rp "Remove the USB stick, then press Enter to restart. " _
+  systemctl reboot
+}
+
+main() {
+  load_auto_config
+  clear 2>/dev/null || true
+  say "Intent OS installer"
+  check_uefi
+  if (( ! AUTO )); then
+    setup_network
+    pick_disk
+    pick_pin
+    pick_timezone
+    confirm_erase
+  fi
+  partition
+  install_packages
+  configure_system
+  configure_snapper
+  copy_network
+  finish
+}
+
+main "$@"

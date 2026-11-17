@@ -1,0 +1,17 @@
+#!/bin/sh
+# Install a pending Intent update before start, never under a running app.
+set -eu
+if [ -e /var/lib/intent-os/intent-update-pending ]; then
+  systemctl start intent-os-intent-upgrade.service || true
+fi
+# pacman is the only updater. Keep the in-app updater off.
+dir="$HOME/.config/Intent"
+prefs="$dir/local-prefs.json"
+mkdir -p "$dir"
+[ -s "$prefs" ] || echo '{"menuBarAutoHide":true}' > "$prefs"
+tmp=$(mktemp "$dir/.local-prefs.XXXXXX")
+if jq '.updateChannel = "disabled"' "$prefs" > "$tmp"; then
+  mv "$tmp" "$prefs"
+else
+  rm -f "$tmp"
+fi

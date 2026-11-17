@@ -1,0 +1,14 @@
+# Kiosk session: sway shows only Intent plus a thin top bar with device controls.
+pkgname=intent-os-session
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervision"
+arch=(any)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(intent-os-base intent-desktop-bin sway swayidle swaylock greetd xorg-xwayland brightnessctl jq wireplumber networkmanager)
+
+package() {
+  cp -a "$startdir/files/." "$pkgdir/"
+  chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
+}

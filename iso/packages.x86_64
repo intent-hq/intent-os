@@ -1,0 +1,4 @@
+# Added to the archiso releng package list.
+networkmanager
+wpa_supplicant
+jq

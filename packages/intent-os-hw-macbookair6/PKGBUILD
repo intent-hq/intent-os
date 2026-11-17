@@ -1,0 +1,18 @@
+# MacBook Air 6,1 (11-inch) and 6,2 (13-inch): Mid 2013 and Early 2014.
+# Haswell HD 5000 graphics (Mesa crocus), Broadcom BCM4360 Wi-Fi (wl),
+# Cirrus CS4208 audio, bcm5974 trackpad. The installer adds this package
+# when DMI product_name matches.
+pkgname=intent-os-hw-macbookair6
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS hardware support for MacBook Air 6,x (2013-2014)"
+arch=(any)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+# broadcom-wl is prebuilt against the repo kernel, so nothing compiles on the device.
+depends=(intent-os-base linux broadcom-wl libva-intel-driver)
+
+package() {
+  cp -a "$startdir/files/." "$pkgdir/"
+  chmod 0755 "$pkgdir"/usr/lib/intent-os/hw/*
+}

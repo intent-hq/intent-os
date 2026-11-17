@@ -1,0 +1,22 @@
+#!/bin/sh
+# Show the boot menu (with snapshots) only after a boot that never reached a
+# healthy Intent session. intent-os-boot-ok.service sets boot_success=1.
+# GRUB cannot write to btrfs, so the flag lives on the FAT ESP.
+set -e
+esp_uuid=$(findmnt -no UUID /efi 2>/dev/null || true)
+[ -n "$esp_uuid" ] || exit 0
+cat <<GRUB
+search --no-floppy --fs-uuid --set=intent_esp $esp_uuid
+if [ -f (\$intent_esp)/intent-os/grubenv ]; then
+  load_env -f (\$intent_esp)/intent-os/grubenv boot_success
+  if [ "\${boot_success}" = "1" ]; then
+    set timeout_style=hidden
+    set timeout=0
+  else
+    set timeout_style=menu
+    set timeout=10
+  fi
+  set boot_success=0
+  save_env -f (\$intent_esp)/intent-os/grubenv boot_success
+fi
+GRUB

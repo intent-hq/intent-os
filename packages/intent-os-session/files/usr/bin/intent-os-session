@@ -1,0 +1,7 @@
+#!/bin/sh
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway XDG_SESSION_DESKTOP=sway
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+if systemd-detect-virt -q; then
+  export WLR_NO_HARDWARE_CURSORS=1
+fi
+exec systemd-cat -t intent-os-sway sway --config /usr/share/intent-os/sway/config

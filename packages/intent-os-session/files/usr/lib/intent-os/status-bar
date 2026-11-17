@@ -1,0 +1,79 @@
+#!/bin/bash
+# swaybar status (i3bar protocol): network, battery, clock, device controls.
+# A dot on a control means an installed update needs that restart.
+set -u
+
+confirm() {
+  swaynag -t warning -m "$1" -z "$2" "$3" >/dev/null 2>&1 &
+}
+
+handle_clicks() {
+  local line name
+  while read -r line; do
+    line=${line#,}
+    [[ $line == "[" || -z $line ]] && continue
+    name=$(jq -r '.name // empty' <<<"$line" 2>/dev/null) || continue
+    case $name in
+      restart-intent) systemctl --user restart intent.service & ;;
+      reboot) confirm "Restart this device?" "Restart" "systemctl reboot" ;;
+      poweroff) confirm "Shut down this device?" "Shut down" "systemctl poweroff" ;;
+    esac
+  done
+}
+
+network() {
+  local name type
+  while IFS=: read -r name type; do
+    case $type in
+      802-11-wireless) echo "$name"; return ;;
+      802-3-ethernet) echo "Wired"; return ;;
+    esac
+  done < <(nmcli -t -f NAME,TYPE connection show --active 2>/dev/null)
+  echo "Offline"
+}
+
+battery() {
+  local ps cap status
+  for ps in /sys/class/power_supply/*; do
+    [[ $(cat "$ps/type" 2>/dev/null) == Battery ]] || continue
+    cap=$(cat "$ps/capacity" 2>/dev/null) || continue
+    status=$(cat "$ps/status" 2>/dev/null)
+    [[ $status == Charging ]] && echo "${cap}% charging" || echo "${cap}%"
+    return
+  done
+}
+
+block() {
+  jq -cn --arg name "$1" --arg text "$2" --arg color "$3" \
+    '{name: $name, full_text: $text, separator: false, separator_block_width: 18}
+     + (if $color == "" then {} else {color: $color} end)'
+}
+
+handle_clicks &
+
+printf '{"version":1,"click_events":true}\n[\n[]\n'
+dim="#a1a1aa"
+hint="#fbbf24"
+while :; do
+  intent_label="Restart Intent" intent_color=$dim
+  reboot_label="Restart" reboot_color=$dim
+  if [[ -e /var/lib/intent-os/intent-update-pending ]]; then
+    intent_label="Restart Intent •" intent_color=$hint
+  fi
+  if [[ -e /run/intent-os/reboot-required ]]; then
+    reboot_label="Restart •" reboot_color=$hint
+  fi
+  bat=$(battery)
+  blocks=(
+    "$(block network "$(network)" "")"
+  )
+  [[ -n $bat ]] && blocks+=("$(block battery "$bat" "")")
+  blocks+=(
+    "$(block clock "$(date '+%a %-d %b  %H:%M')" "")"
+    "$(block restart-intent "$intent_label" "$intent_color")"
+    "$(block reboot "$reboot_label" "$reboot_color")"
+    "$(block poweroff "Shut down" "$dim")"
+  )
+  (IFS=,; printf ',[%s]\n' "${blocks[*]}")
+  sleep 5
+done

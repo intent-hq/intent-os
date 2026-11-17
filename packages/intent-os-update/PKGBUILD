@@ -1,0 +1,14 @@
+# Staged, idle-time updates for Arch and Intent, with snapshot-backed rollback.
+pkgname=intent-os-update
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS automatic updates"
+arch=(any)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(intent-os-base pacman curl snapper snap-pac)
+
+package() {
+  cp -a "$startdir/files/." "$pkgdir/"
+  chmod 0755 "$pkgdir"/usr/lib/intent-os/*
+}

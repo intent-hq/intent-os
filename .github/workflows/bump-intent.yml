@@ -1,0 +1,47 @@
+name: bump-intent
+
+# Follow the Intent stable channel. A bump commits to main, which builds,
+# boot-tests, and publishes a new image.
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check stable Intent version
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pkgbuild=packages/intent-desktop-bin/PKGBUILD
+          current=$(sed -n 's/^pkgver=//p' "$pkgbuild")
+          latest=$(gh release download stable --repo intent-hq/cloudlands-releases -p latest-linux.yml -O - \
+            | sed -n 's/^version: *//p')
+          [[ $latest =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version '$latest'"; exit 1; }
+          echo "current=$current latest=$latest"
+          [ "$current" = "$latest" ] && exit 0
+          deb="intent_${latest}_amd64.deb"
+          gh release download "v$latest" --repo intent-hq/cloudlands-releases -p "$deb" -D "$RUNNER_TEMP"
+          sum=$(sha256sum "$RUNNER_TEMP/$deb" | cut -d' ' -f1)
+          sed -i -e "s/^pkgver=.*/pkgver=$latest/" -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums=.*/sha256sums=('$sum')/" "$pkgbuild"
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+      - name: Commit
+        if: steps.check.outputs.version != ''
+        run: |
+          git config user.name "intent-os-bot"
+          git config user.email "intent-os-bot@users.noreply.github.com"
+          git commit -am "chore: bump Intent to ${{ steps.check.outputs.version }}"
+          git push
+          # Pushes made with GITHUB_TOKEN do not start workflows; dispatch the build.
+          gh workflow run build.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}

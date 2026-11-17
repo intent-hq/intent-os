@@ -1,0 +1,12 @@
+[terminal]
+vt = 1
+
+# Boot straight into the session; it locks itself before Intent is shown.
+[initial_session]
+command = "/usr/bin/intent-os-session"
+user = "intent"
+
+# Used only if the session exits: a text login (user "intent", PIN).
+[default_session]
+command = "agreety --cmd /usr/bin/intent-os-session"
+user = "greeter"

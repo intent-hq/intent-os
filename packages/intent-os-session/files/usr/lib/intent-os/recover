@@ -1,0 +1,22 @@
+#!/bin/bash
+# Reboot at most twice in 30 minutes; then stop and ask the owner.
+set -u
+state="${XDG_STATE_HOME:-$HOME/.local/state}/intent-os"
+log="$state/recoveries"
+mkdir -p "$state"
+now=$(date +%s)
+recent=0
+if [[ -f $log ]]; then
+  while read -r t; do
+    [[ $t =~ ^[0-9]+$ ]] && (( now - t < 1800 )) && recent=$((recent + 1))
+  done < "$log"
+fi
+if (( recent < 2 )); then
+  echo "$now" >> "$log"
+  echo "intent-os: Intent did not start; restarting the device"
+  exec systemctl reboot
+fi
+echo "intent-os: Intent did not start after two device restarts" >&2
+exec swaynag -t warning -m "Intent could not start." \
+  -z "Try again" "systemctl --user reset-failed intent.service; systemctl --user start intent.service" \
+  -z "Restart device" "systemctl reboot"
