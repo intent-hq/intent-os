@@ -12,10 +12,9 @@ gptfdisk
 networkmanager
 wpa_supplicant
 jq
-# Wi-Fi only: prebuilt MacBook Air wl driver and Intel iwlwifi firmware
-# (intent-os-live, built in build/in-container.sh), plus small Wi-Fi sets.
+# Wi-Fi only: prebuilt MacBook Air wl driver plus Intel, Atheros and
+# MediaTek Wi-Fi firmware (intent-os-live, built in build/in-container.sh),
+# and the small Broadcom and Realtek sets.
 intent-os-live
-linux-firmware-atheros
 linux-firmware-broadcom
-linux-firmware-mediatek
 linux-firmware-realtek

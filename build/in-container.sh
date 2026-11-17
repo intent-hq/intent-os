@@ -77,7 +77,8 @@ write_mirrorlist() {
 # headers or full firmware packages.
 build_live_package() {
   log "Building the live Wi-Fi package"
-  pacman -S --noconfirm --needed linux linux-headers broadcom-wl-dkms linux-firmware-intel >/dev/null
+  pacman -S --noconfirm --needed linux linux-headers broadcom-wl-dkms \
+    linux-firmware-intel linux-firmware-atheros linux-firmware-mediatek >/dev/null
   local linux_ver kdir wl dir=$WORK/live-pkg
   linux_ver=$(pacman -Q linux | awk '{print $2}')
   kdir=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/updates/dkms' ';' -print | head -n1)
@@ -91,12 +92,19 @@ build_live_package() {
     install -Dm644 "$conf" "$dir/root$conf"
   done
   mkdir -p "$dir/root/usr/lib/firmware"
-  (cd /usr/lib/firmware && find . -name 'iwlwifi-*' -exec cp -a --parents {} "$dir/root/usr/lib/firmware" \;)
+  # Wi-Fi files only: Intel iwlwifi, Qualcomm Atheros ath*k, MediaTek mt7x
+  # (no Bluetooth, GPU or SoC firmware from these packages).
+  (cd /usr/lib/firmware && find . \( -type f -o -type l \) \( \
+      -name 'iwlwifi-*' \
+      -o -path './ath9k_htc/*' -o -path './ath10k/*' -o -path './ath11k/*' \
+      -o -path './ath12k/*' -o -path './ath6k/*' -o -name 'htc_*.fw' \
+      -o \( \( -name 'mt7*' -o -name 'WIFI_*' \) ! -name '*BT*' \) \) \
+      -exec cp -a --parents {} "$dir/root/usr/lib/firmware" \;)
   cat > "$dir/PKGBUILD" <<PKG
 pkgname=intent-os-live
 pkgver=1
 pkgrel=1
-pkgdesc="Intent OS live installer Wi-Fi: prebuilt wl driver and iwlwifi firmware"
+pkgdesc="Intent OS live installer Wi-Fi: prebuilt wl driver and Wi-Fi firmware"
 arch=(x86_64)
 license=(custom)
 depends=("linux=$linux_ver")
@@ -176,6 +184,8 @@ CONF
   rm -rf "$OUT/iso"
   mkarchiso -v -w "$WORK/archiso" -o "$OUT/iso" "$profile"
   (cd "$OUT/iso" && sha256sum ./*.iso > SHA256SUMS)
+  log "Largest parts of the live system"
+  du -x -m --max-depth=5 "$WORK/archiso/x86_64/airootfs/usr" 2>/dev/null | sort -n | tail -n 25
   # The netinstall image must stay small; fail here, not at publish.
   local iso size limit=$((600 * 1024 * 1024))
   iso=$(ls "$OUT"/iso/*.iso)
