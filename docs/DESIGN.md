@@ -125,7 +125,7 @@ stateDiagram-v2
 2. **Shape:** a small ready-to-boot qcow2 disk, the VM counterpart of the netinstall
    ISO. CI runs the installer in image and bootstrap mode onto loop devices inside an
    Arch Linux ARM container: kernel, network, GRUB and `intent-os-bootstrap` only, with
-   a generic initramfs. The build fails above 400 MiB.
+   a generic initramfs. The build fails above 500 MiB.
 3. **First boot:** `intent-os-firstboot.service` (from `intent-os-bootstrap`) asks for
    the PIN and time zone on the console, downloads Intent OS, sets up snapshots, GRUB
    and services, and restarts into Intent.

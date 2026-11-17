@@ -245,7 +245,7 @@ install_packages() {
   if (( IMAGE )); then
     # Built in a container: keep every driver, not just the build host's.
     mkdir -p "$MNT/etc/mkinitcpio.conf.d"
-    echo 'HOOKS=(base udev modconf kms keyboard keymap consolefont block filesystems)' \
+    echo 'HOOKS=(base udev modconf keyboard keymap consolefont block filesystems)' \
       > "$MNT/etc/mkinitcpio.conf.d/zz-intent-os-image.conf"
   fi
   genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' >> "$MNT/etc/fstab"
@@ -318,8 +318,8 @@ configure_system() {
   [[ $ARCH == aarch64 ]] && grub_target=arm64-efi
   (( FIRSTBOOT )) && hw_units+=" intent-os-firstboot.service"
 
-  arch-chroot "$MNT" /bin/bash -euo pipefail -s -- "$TIMEZONE" "$OWNER" "$hw_units" "$(keyring_name)" "$grub_target" "$units" <<'CHROOT'
-tz=$1 owner=$2 hw_units=$3 keyring=$4 grub_target=$5 units=$6
+  arch-chroot "$MNT" /bin/bash -euo pipefail -s -- "$TIMEZONE" "$OWNER" "$hw_units" "$(keyring_name)" "$grub_target" "$units" "$IMAGE" <<'CHROOT'
+tz=$1 owner=$2 hw_units=$3 keyring=$4 grub_target=$5 units=$6 image=$7
 ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
 hwclock --systohc || true
 locale-gen
@@ -329,12 +329,19 @@ pacman-key --init
 pacman-key --populate "$keyring"
 [[ -f /usr/share/pacman/keyrings/intent-os.gpg ]] && pacman-key --populate intent-os
 mkinitcpio -P
-if [[ -f /boot/Image && ! -f /boot/vmlinuz-linux ]]; then cp /boot/Image /boot/vmlinuz-linux; fi
+if [[ -f /boot/Image && ! -f /boot/vmlinuz-linux ]]; then ln -f /boot/Image /boot/vmlinuz-linux; fi
 grub-install --target="$grub_target" --efi-directory=/efi --boot-directory=/boot --removable --no-nvram
 mkdir -p /efi/intent-os
 grub-editenv /efi/intent-os/grubenv create
 grub-editenv /efi/intent-os/grubenv set boot_success=1
+if (( image )); then
+  # Image builds run in a container: skip the fallback initramfs (first boot
+  # rebuilds both) and keep the build host's EFI boot entries out of the menu.
+  rm -f /boot/initramfs-*-fallback.img
+  chmod -x /etc/grub.d/30_uefi-firmware 2>/dev/null || true
+fi
 grub-mkconfig -o /boot/grub/grub.cfg
+if (( image )); then chmod +x /etc/grub.d/30_uefi-firmware 2>/dev/null || true; fi
 grep -q '^[[:space:]]*linux[[:space:]]' /boot/grub/grub.cfg || { echo "error: grub.cfg has no kernel entry" >&2; exit 1; }
 # shellcheck disable=SC2086
 systemctl enable NetworkManager systemd-resolved systemd-timesyncd $units $hw_units

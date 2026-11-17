@@ -9,4 +9,4 @@ Target = linux-aarch64
 [Action]
 Description = Exposing the arm64 kernel to GRUB...
 When = PostTransaction
-Exec = /usr/bin/cp -f /boot/Image /boot/vmlinuz-linux
+Exec = /usr/bin/ln -f /boot/Image /boot/vmlinuz-linux
