@@ -1,0 +1,5 @@
+/out/
+/work/
+*.iso
+*.pkg.tar.zst
+*.qcow2
