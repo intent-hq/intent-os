@@ -150,6 +150,12 @@ build_iso() {
       https://gitlab.archlinux.org/archlinux/archiso.git "$WORK/archiso-src"
     cp -r "$WORK/archiso-src/configs/baseline" "$profile"
     mkarchiso=$WORK/archiso-src/archiso/mkarchiso
+    # archiso's GRUB module list includes x86-only modules (at_keyboard, ...);
+    # keep only the ones that exist for the target.
+    sed -i '/usbserial_pl2303 usbserial_usbdebug video xfs zstd)/a\
+    local _m _have=(); for _m in "${grubmodules[@]}"; do [[ -e "/usr/lib/grub/${grub_target}/${_m}.mod" ]] \&\& _have+=("$_m"); done; grubmodules=("${_have[@]}")' \
+      "$mkarchiso"
+    grep -q '_have+=' "$mkarchiso" || { echo "error: could not patch mkarchiso GRUB modules" >&2; exit 1; }
     console=ttyAMA0 limit_mib=700
     # Arch Linux ARM repos; UEFI GRUB only (no BIOS on arm64).
     cp /etc/pacman.conf "$profile/pacman.conf"
