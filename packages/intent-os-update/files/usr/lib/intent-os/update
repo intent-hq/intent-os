@@ -54,6 +54,7 @@ if [[ $(cat "$STATE/applied-build" 2>/dev/null) == "$build" && ! -e $STATE/retry
 fi
 
 log "updating to $date (build $build)"
+# shellcheck disable=SC2016 # pacman expands $repo and $arch
 printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$date" > "$MIRRORLIST"
 touch "$STATE/retry"
 pacman -Sy --noconfirm --needed archlinux-keyring

@@ -69,6 +69,7 @@ build_packages() {
 }
 
 write_mirrorlist() {
+  # shellcheck disable=SC2016 # pacman expands $repo and $arch
   printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$ARCHIVE_DATE" > "$1"
 }
 
