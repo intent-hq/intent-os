@@ -1,0 +1,18 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = linux
+Target = linux-firmware*
+Target = intel-ucode
+Target = amd-ucode
+Target = systemd
+Target = glibc
+Target = mesa
+Target = sway
+Target = wlroots*
+Target = broadcom-wl-dkms
+
+[Action]
+Description = Marking that a restart is needed...
+When = PostTransaction
+Exec = /usr/bin/sh -c 'mkdir -p /run/intent-os && touch /run/intent-os/reboot-required'

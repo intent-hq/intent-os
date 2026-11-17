@@ -1,0 +1,129 @@
+name: build
+
+# Every image must install and boot into Intent in QEMU before it ships.
+# The nightly run moves the Arch snapshot to yesterday; publishing that
+# build advances the update channel that devices follow.
+on:
+  push:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      archive_date:
+        description: "Arch Linux Archive date (YYYY/MM/DD); empty uses channel/archive-date"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      build_id: ${{ steps.ids.outputs.build_id }}
+      archive_date: ${{ steps.ids.outputs.archive_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: make lint
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Pick snapshot date and build id
+        id: ids
+        env:
+          INPUT_DATE: ${{ inputs.archive_date }}
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$INPUT_DATE" ]; then d=$INPUT_DATE
+          elif [ "$EVENT" = schedule ]; then d=$(date -u -d yesterday +%Y/%m/%d)
+          else
+            # Never publish a snapshot older than the one devices already have.
+            d=$(cat channel/archive-date)
+            p=$(gh release download channel -p channel.env -O - 2>/dev/null | sed -n 's/^ARCHIVE_DATE=//p' || true)
+            if [[ $p > $d ]]; then d=$p; fi
+          fi
+          echo "archive_date=$d" >> "$GITHUB_OUTPUT"
+          echo "build_id=$(date -u +%Y%m%d%H%M)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - name: Build packages and ISO
+        env:
+          INTENT_OS_SIGNING_KEY: ${{ secrets.INTENT_OS_SIGNING_KEY }}
+        run: make image ARCHIVE_DATE='${{ steps.ids.outputs.archive_date }}' BUILD_ID='${{ steps.ids.outputs.build_id }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: |
+            out/iso
+            out/repo
+            out/keyring
+            out/channel.env
+          if-no-files-found: error
+          compression-level: 0
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: out
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install QEMU
+        run: sudo apt-get update -q && sudo apt-get install -yq qemu-system-x86 qemu-utils ovmf socat imagemagick
+      - name: Install and boot into Intent
+        timeout-minutes: 50
+        run: make smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke
+          path: |
+            out/smoke/*.log
+            out/smoke/*.png
+            out/smoke/*.ppm
+            out/smoke/result.txt
+
+  publish:
+    needs: [build, smoke]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_ID: ${{ needs.build.outputs.build_id }}
+      ARCHIVE_DATE: ${{ needs.build.outputs.archive_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: out
+      - name: Publish ISO
+        run: |
+          gh release create "iso-$BUILD_ID" out/iso/*.iso out/iso/SHA256SUMS \
+            --title "Intent OS $BUILD_ID" \
+            --notes "Installer for Intent OS. Arch snapshot $ARCHIVE_DATE. $(grep INTENT_VERSION out/channel.env)"
+      - name: Publish package repo
+        if: hashFiles('out/keyring/intent-os.gpg') != ''
+        run: |
+          gh release view repo-x86_64 >/dev/null 2>&1 || \
+            gh release create repo-x86_64 --title "Intent OS package repo (x86_64)" --notes "pacman repo. Do not download by hand."
+          gh release upload repo-x86_64 out/repo/* --clobber
+      - name: Advance update channel
+        run: |
+          gh release view channel >/dev/null 2>&1 || \
+            gh release create channel --title "Intent OS update channel" --notes "Newest build that passed the boot test."
+          gh release upload channel out/channel.env --clobber

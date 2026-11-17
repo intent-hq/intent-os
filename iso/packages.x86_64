@@ -1,0 +1,7 @@
+# Added to the archiso releng package list.
+networkmanager
+wpa_supplicant
+jq
+# MacBook Air BCM4360 Wi-Fi for the installer; releng no longer ships it.
+broadcom-wl-dkms
+linux-headers

@@ -1,0 +1,56 @@
+#!/bin/bash
+# Wi-Fi picker for the top bar: a dropdown under the network item. Lists
+# nearby networks, asks for a password only for new secured networks, and
+# reports failures in a swaynag bar. Needs no terminal.
+set -u
+
+menu() { fuzzel --config=/usr/share/intent-os/fuzzel.ini --dmenu "$@"; }
+fail() { swaynag -t warning -m "$1" >/dev/null 2>&1 & }
+
+pgrep -x fuzzel >/dev/null && exit 0
+
+if [[ $(nmcli -t radio wifi 2>/dev/null) != enabled ]]; then
+  pick=$(printf 'Turn Wi-Fi on\n' | menu --prompt 'Wi-Fi  ' --lines 1) || exit 0
+  [[ -n $pick ]] && nmcli radio wifi on
+  exit 0
+fi
+
+ssids=() secured=() labels=()
+while IFS=: read -r inuse signal security ssid; do
+  [[ -z $ssid ]] && continue
+  for s in "${ssids[@]}"; do [[ $s == "$ssid" ]] && continue 2; done
+  ssids+=("$ssid")
+  secured+=("$([[ -n $security && $security != -- ]] && echo 1 || echo 0)")
+  label="$ssid"
+  [[ $inuse == '*' ]] && label="● $label"
+  label+="    ${signal}%"
+  [[ ${secured[-1]} == 1 ]] && label+="  ·  secured"
+  labels+=("$label")
+done < <(nmcli -t -e no -f IN-USE,SIGNAL,SECURITY,SSID dev wifi list --rescan auto 2>/dev/null)
+
+labels+=("Turn Wi-Fi off")
+index=$(printf '%s\n' "${labels[@]}" | menu --index --prompt 'Wi-Fi  ') || exit 0
+[[ $index =~ ^[0-9]+$ ]] || exit 0
+
+if (( index == ${#ssids[@]} )); then
+  nmcli radio wifi off
+  exit 0
+fi
+
+ssid=${ssids[$index]}
+if nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq -- "$ssid"; then
+  nmcli connection up id "$ssid" >/dev/null 2>&1 || fail "Could not connect to $ssid."
+  exit 0
+fi
+
+if [[ ${secured[$index]} == 1 ]]; then
+  pw=$(menu --password --prompt-only "Password for $ssid  " </dev/null) || exit 0
+  [[ -n $pw ]] || exit 0
+  if ! nmcli dev wifi connect "$ssid" password "$pw" >/dev/null 2>&1; then
+    # Drop the failed profile so the next try asks for the password again.
+    nmcli connection delete id "$ssid" >/dev/null 2>&1
+    fail "Could not connect to $ssid. Check the password and try again."
+  fi
+else
+  nmcli dev wifi connect "$ssid" >/dev/null 2>&1 || fail "Could not connect to $ssid."
+fi

@@ -1,0 +1,27 @@
+#!/bin/bash
+# Run the owner's Intent AppImage as the service's main process.
+# Intent's updater replaces the AppImage and relaunches the new version
+# itself, so keep running while that relaunched Intent lives. SIGTERM is
+# forwarded so Intent can stop its intentd sidecar cleanly.
+set -u
+app="$HOME/.local/lib/intent-os/Intent.AppImage"
+child="" stopping=0
+trap 'stopping=1; [[ -n $child ]] && kill -TERM "$child" 2>/dev/null' TERM INT
+
+"$app" "$@" &
+child=$!
+status=0
+while kill -0 "$child" 2>/dev/null; do
+  wait "$child"
+  status=$?
+done
+(( stopping )) && exit 0
+
+while (( ! stopping )) && child=$(pgrep -n -u "$UID" -f -- "^$app( |$)"); do
+  echo "intent-os: following relaunched Intent (pid $child) after an update"
+  while (( ! stopping )) && kill -0 "$child" 2>/dev/null; do
+    sleep 2 &
+    wait $!
+  done
+done
+exit "$status"

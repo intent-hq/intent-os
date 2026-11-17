@@ -1,0 +1,19 @@
+[Unit]
+Description=Intent
+PartOf=intent-os-session.target
+# Three failed starts in five minutes escalate to intent-os-recover.
+StartLimitIntervalSec=300
+StartLimitBurst=3
+OnFailure=intent-os-recover.service
+
+[Service]
+ExecStartPre=/usr/lib/intent-os/prepare-intent
+ExecStart=/usr/lib/intent-os/run-intent
+# Healthy means an Intent window is on screen. A failed check fails the start.
+ExecStartPost=/usr/lib/intent-os/intent-health
+TimeoutStartSec=240
+Restart=always
+RestartSec=2
+# run-intent forwards SIGTERM so Electron can stop its intentd sidecar cleanly.
+KillMode=mixed
+TimeoutStopSec=30

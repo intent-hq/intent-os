@@ -1,0 +1,13 @@
+#!/bin/sh
+# Seed the owner's self-updating Intent AppImage and its first-run prefs.
+set -eu
+app="$HOME/.local/lib/intent-os/Intent.AppImage"
+if [ ! -x "$app" ]; then
+  install -Dm755 /usr/share/intent-os/Intent.AppImage "$app"
+fi
+dir="$HOME/.config/Intent"
+prefs="$dir/local-prefs.json"
+mkdir -p "$dir"
+# First run only: newest Intent (alpha), no app menu bar. The owner can
+# change the channel in Intent's settings later.
+[ -s "$prefs" ] || echo '{"updateChannel":"alpha","menuBarAutoHide":true}' > "$prefs"

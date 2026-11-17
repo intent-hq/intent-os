@@ -1,0 +1,23 @@
+# Thin Intent OS base: boot, network, snapshots, audio, and owner tooling.
+pkgname=intent-os-base
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS base system"
+arch=(any)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(
+  base linux linux-firmware intel-ucode amd-ucode
+  btrfs-progs dosfstools grub efibootmgr grub-btrfs inotify-tools snapper snap-pac
+  networkmanager wpa_supplicant sudo polkit zram-generator
+  pipewire pipewire-pulse pipewire-alsa wireplumber mesa noto-fonts noto-fonts-emoji
+  git openssh nodejs npm ripgrep jq less man-db nano which github-cli
+)
+backup=(etc/sudoers.d/10-intent-os)
+
+package() {
+  cp -a "$startdir/files/." "$pkgdir/"
+  chmod 0750 "$pkgdir/etc/sudoers.d"
+  chmod 0440 "$pkgdir/etc/sudoers.d/10-intent-os"
+  chmod 0755 "$pkgdir/etc/grub.d/05_intent-os" "$pkgdir"/usr/lib/intent-os/*
+}
