@@ -12,6 +12,10 @@ on:
       archive_date:
         description: "Arch Linux Archive date (YYYY/MM/DD); empty uses channel/archive-date"
         required: false
+      arm64_smoke:
+        description: "Run the aarch64 QEMU boot test (slow: no KVM on arm64 runners)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -122,8 +126,11 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  # Manual only: arm64 runners have no KVM, so this takes over an hour. The
+  # aarch64 ISO is tested by hand (UTM) before release; it does not gate publish.
   smoke-arm64:
     needs: build-arm64
+    if: inputs.arm64_smoke == true
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     steps:
@@ -157,7 +164,7 @@ jobs:
             out/smoke/result.txt
 
   publish:
-    needs: [ids, build, smoke, build-arm64, smoke-arm64]
+    needs: [ids, build, smoke, build-arm64]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     env:

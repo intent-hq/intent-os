@@ -129,8 +129,9 @@ stateDiagram-v2
    `/boot/Image` to `/boot/vmlinuz-linux`, the name mkarchiso, GRUB and grub-btrfs expect.
 4. **Updates:** Arch Linux ARM has no archive, so aarch64 devices follow normal mirrors.
    Intent OS packages come from the signed `repo-aarch64` release.
-5. **Tests:** `tests/smoke.sh` runs the same install-and-boot test on the aarch64 ISO, with
-   KVM when the runner has it and TCG otherwise.
+5. **Tests:** the aarch64 ISO is tested by hand in UTM before release. `tests/smoke.sh`
+   can run the same install-and-boot test on it, but GitHub's arm64 runners have no KVM,
+   so CI runs it only on demand (`arm64_smoke` workflow input).
 6. **Not covered:** bare-metal Apple silicon (needs Asahi's boot chain).
 
 ## 9. Later
