@@ -23,7 +23,7 @@ depends_x86_64=(
 )
 # Arch Linux ARM generic kernel. The arm64 target today is VMs on Apple
 # silicon Macs, which need no firmware.
-depends_aarch64=(linux-aarch64)
+depends_aarch64=(linux-aarch64 archlinuxarm-keyring)
 backup=(etc/sudoers.d/10-intent-os)
 
 package() {
