@@ -5,6 +5,13 @@ app="$HOME/.local/lib/intent-os/Intent.AppImage"
 if [ ! -x "$app" ]; then
   install -Dm755 /usr/share/intent-os/Intent.AppImage "$app"
 fi
+# An unclean shutdown can leave intentd's pidfile behind; after a reboot its
+# pid may belong to another process and intentd refuses to start. No intentd
+# runs before Intent starts it, so any pidfile here is stale.
+pidfile="$HOME/.local/share/intentd/intentd.pid"
+if [ -e "$pidfile" ] && ! pgrep -u "$(id -u)" -x intentd >/dev/null; then
+  rm -f "$pidfile"
+fi
 dir="$HOME/.config/Intent"
 prefs="$dir/local-prefs.json"
 mkdir -p "$dir"
