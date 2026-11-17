@@ -48,7 +48,7 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    gives a built-in bar, so device controls need no extra process.
 2. **Lock first.** `swaylock -f` returns only once the screen is locked, then Intent
    starts behind the lock. It is never visible before the PIN.
-3. **PIN = the owner's Linux password.** swaylock checks it through PAM. It is also the
+3. **PIN = the owner's Linux password.** The lock screen is hyprlock (clock and an "Enter PIN" field; swaylock is the fallback). After 10 wrong PINs it waits a minute (faillock). swaylock checks it through PAM. It is also the
    `sudo` password. Root is locked.
 4. **Controls** are in the top-right of the bar. Restart and Shut down ask once in a
    swaynag bar (no password). A polkit rule lets `wheel` reboot and power off from user

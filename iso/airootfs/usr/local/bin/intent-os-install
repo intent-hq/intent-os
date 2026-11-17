@@ -309,6 +309,10 @@ configure_system() {
   echo "KEYMAP=us" > "$MNT/etc/vconsole.conf"
   echo "LANG=en_US.UTF-8" > "$MNT/etc/locale.conf"
   sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$MNT/etc/locale.gen"
+  # Phone-like PIN lockout: 10 wrong tries, then wait a minute (default is
+  # 3 tries and a 10-minute lockout, which also blocks the right PIN).
+  sed -i -E -e 's/^#? *deny *=.*/deny = 10/' -e 's/^#? *unlock_time *=.*/unlock_time = 60/' \
+    "$MNT/etc/security/faillock.conf" 2>/dev/null || true
   sed -i -E \
     -e 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="Intent OS"/' \
     -e "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"$cmdline\"/" \

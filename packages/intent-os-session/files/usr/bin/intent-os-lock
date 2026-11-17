@@ -1,11 +1,12 @@
 #!/bin/sh
-# The PIN is the owner's Linux password, so swaylock checks it through PAM.
+# Lock the screen and return once the lock is up. The PIN is the owner's
+# Linux password, checked through PAM. hyprlock shows a clock and a PIN
+# field; swaylock is the fallback if hyprlock cannot start.
+pgrep -x hyprlock >/dev/null && exit 0
 pgrep -x swaylock >/dev/null && exit 0
-exec swaylock -f \
-  --color 0b0b0c --indicator-radius 72 --indicator-thickness 6 --indicator-idle-visible \
-  --inside-color 18181b --ring-color 3f3f46 --key-hl-color e4e4e7 --bs-hl-color a1a1aa \
-  --line-color 00000000 --separator-color 00000000 --text-color e4e4e7 \
-  --inside-ver-color 18181b --ring-ver-color a1a1aa --text-ver-color e4e4e7 \
-  --inside-wrong-color 18181b --ring-wrong-color f87171 --text-wrong-color f87171 \
-  --inside-clear-color 18181b --ring-clear-color 3f3f46 --text-clear-color e4e4e7 \
-  --hide-keyboard-layout --show-failed-attempts
+setsid hyprlock --config /usr/share/intent-os/hyprlock.conf >/dev/null 2>&1 &
+pid=$!
+sleep 1
+kill -0 "$pid" 2>/dev/null && exit 0
+exec swaylock -f --color 0b0b0c --indicator-idle-visible --show-failed-attempts \
+  --inside-color 18181b --ring-color 3f3f46 --key-hl-color e4e4e7 --text-color e4e4e7
