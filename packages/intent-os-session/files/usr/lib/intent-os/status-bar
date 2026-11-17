@@ -72,7 +72,8 @@ block() {
      + (if $color == "" then {} else {color: $color} end)'
 }
 
-handle_clicks &
+# Bash gives background jobs /dev/null as stdin; pass swaybar's click events explicitly.
+handle_clicks <&0 &
 
 printf '{"version":1,"click_events":true}\n[\n[]\n'
 dim="#a1a1aa"
