@@ -4,4 +4,4 @@ env=/efi/intent-os/grubenv
 [ -f "$env" ] || grub-editenv "$env" create
 grub-editenv "$env" set boot_success=1
 echo "INTENT_OS_BOOT_OK"
-echo "INTENT_OS_BOOT_OK" > /dev/kmsg 2>/dev/null || true
+echo "<2>INTENT_OS_BOOT_OK" > /dev/kmsg 2>/dev/null || true

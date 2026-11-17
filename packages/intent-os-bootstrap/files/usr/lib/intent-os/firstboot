@@ -14,7 +14,7 @@ retry() {
   done
 }
 
-echo "INTENT_OS_FIRSTBOOT" > /dev/kmsg 2>/dev/null || true
+echo "<2>INTENT_OS_FIRSTBOOT" > /dev/kmsg 2>/dev/null || true
 clear
 say "Welcome to Intent OS"
 
