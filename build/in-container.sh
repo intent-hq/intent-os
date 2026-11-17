@@ -90,8 +90,8 @@ build_live_package() {
   for conf in /usr/lib/modprobe.d/broadcom-wl*.conf; do
     install -Dm644 "$conf" "$dir/root$conf"
   done
-  (cd /usr/lib/firmware && find . \( -name 'iwlwifi-*' -o -path './intel/iwlwifi*' \) -print0 |
-    tar --null -cf - -T - | tar -xf - -C "$dir/root" --one-top-level=usr/lib/firmware)
+  mkdir -p "$dir/root/usr/lib/firmware"
+  (cd /usr/lib/firmware && find . -name 'iwlwifi-*' -exec cp -a --parents {} "$dir/root/usr/lib/firmware" \;)
   cat > "$dir/PKGBUILD" <<PKG
 pkgname=intent-os-live
 pkgver=1
