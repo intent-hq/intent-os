@@ -6,7 +6,7 @@ pkgname=intent-os-hw-macbookair6
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Intent OS hardware support for MacBook Air 6,x (2013-2014)"
-arch=(any)
+arch=(x86_64)
 url="https://github.com/intent-hq/intent-os"
 license=(Apache-2.0)
 # Arch ships the wl driver only as DKMS; it rebuilds on each kernel update.

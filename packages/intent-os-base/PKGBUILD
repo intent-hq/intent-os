@@ -3,21 +3,27 @@ pkgname=intent-os-base
 pkgver=0.1.0
 pkgrel=1
 pkgdesc="Intent OS base system"
-arch=(any)
+arch=(x86_64 aarch64)
 url="https://github.com/intent-hq/intent-os"
 license=(Apache-2.0)
 depends=(
-  base linux intel-ucode amd-ucode
-  # Laptop and desktop firmware only. The full linux-firmware set (Qualcomm,
-  # Mellanox, NVIDIA, Marvell, ...) would push the ISO past GitHub's 2 GiB limit.
-  linux-firmware-intel linux-firmware-amdgpu linux-firmware-amd linux-firmware-radeon
-  linux-firmware-atheros linux-firmware-broadcom linux-firmware-mediatek linux-firmware-realtek
-  linux-firmware-cirrus linux-firmware-ti linux-firmware-other
+  base
   btrfs-progs dosfstools grub efibootmgr grub-btrfs inotify-tools snapper snap-pac
   networkmanager wpa_supplicant sudo polkit zram-generator
   pipewire pipewire-pulse pipewire-alsa wireplumber mesa noto-fonts noto-fonts-emoji
   git openssh nodejs npm ripgrep jq less man-db nano which github-cli
 )
+# Laptop and desktop firmware only. The full linux-firmware set (Qualcomm,
+# Mellanox, NVIDIA, Marvell, ...) would push the ISO past GitHub's 2 GiB limit.
+depends_x86_64=(
+  linux intel-ucode amd-ucode
+  linux-firmware-intel linux-firmware-amdgpu linux-firmware-amd linux-firmware-radeon
+  linux-firmware-atheros linux-firmware-broadcom linux-firmware-mediatek linux-firmware-realtek
+  linux-firmware-cirrus linux-firmware-ti linux-firmware-other
+)
+# Arch Linux ARM generic kernel. The arm64 target today is VMs on Apple
+# silicon Macs, which need no firmware.
+depends_aarch64=(linux-aarch64 archlinuxarm-keyring intent-os-bootstrap)
 backup=(etc/sudoers.d/10-intent-os)
 
 package() {

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Runs inside a privileged archlinux:base-devel container with the repo at /src.
+# Runs inside a privileged container with the repo at /src: archlinux:base-devel
+# on x86_64, an Arch Linux ARM image on aarch64 (see the Makefile).
 #   packages: build Intent OS pacman packages into out/repo
 #   iso:      build the installer ISO (netinstall) into out/iso
 #   all:      both
@@ -10,7 +11,11 @@ set -euo pipefail
 SRC=/src
 OUT=$SRC/out
 WORK=/tmp/intent-os
-PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
+ARCH=$(uname -m)
+# archiso is not packaged for Arch Linux ARM; aarch64 runs it from this tag.
+ARCHISO_REF=v92
+PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-bootstrap)
+[[ $ARCH == x86_64 ]] && PACKAGES+=(intent-os-hw-macbookair6)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
 : "${BUILD_ID:?set BUILD_ID}"
@@ -21,8 +26,16 @@ log() { printf '\n==> %s\n' "$*"; }
 prepare() {
   log "Preparing build container"
   pacman-key --init >/dev/null
-  pacman-key --populate archlinux >/dev/null
-  pacman -Syu --noconfirm --needed archiso git grub erofs-utils mtools dosfstools >/dev/null
+  if [[ $ARCH == aarch64 ]]; then
+    pacman-key --populate archlinuxarm >/dev/null
+    # The imported rootfs keeps CheckSpace, which fails on overlay mounts.
+    sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
+    pacman -Syu --noconfirm --needed base-devel git arch-install-scripts btrfs-progs \
+      dosfstools gptfdisk grub libisoburn erofs-utils squashfs-tools mtools >/dev/null
+  else
+    pacman-key --populate archlinux >/dev/null
+    pacman -Syu --noconfirm --needed archiso git grub erofs-utils mtools dosfstools >/dev/null
+  fi
   id builder >/dev/null 2>&1 || useradd -m builder
   mkdir -p "$OUT" "$WORK"
   SIGN_ARGS=() REPO_SIGN_ARGS=() KEY_ID=""
@@ -39,6 +52,9 @@ prepare() {
     mkdir -p "$OUT/keyring"
     gpg --batch --armor --export "$KEY_ID" > "$OUT/keyring/intent-os.gpg"
     echo "$KEY_ID:4:" > "$OUT/keyring/intent-os-trusted"
+    # The aarch64 ISO installs intent-os-bootstrap from the signed local repo.
+    pacman-key --add "$OUT/keyring/intent-os.gpg" >/dev/null
+    pacman-key --lsign-key "$KEY_ID" >/dev/null
   fi
 }
 
@@ -52,7 +68,7 @@ build_packages() {
     cp -r "$SRC/packages/$p" "$WORK/pkgbuild/$p"
     chown -R builder "$WORK/pkgbuild/$p"
     (cd "$WORK/pkgbuild/$p" &&
-      sudo -u builder env PKGDEST="$OUT/repo" SRCDEST="$WORK/src" \
+      sudo -u builder env PKGDEST="$OUT/repo" SRCDEST="$WORK/src" PKGEXT=.pkg.tar.zst \
         makepkg -fd --noconfirm "${SIGN_ARGS[@]}")
   done
   repo-add -q "${REPO_SIGN_ARGS[@]}" "$OUT/repo/intent-os.db.tar.gz" "$OUT"/repo/*.pkg.tar.zst
@@ -123,19 +139,37 @@ PKG
       awk -F '\t' '{ if (++seen[$1] > 2) print $3 }')
   find "$dir/root/usr/lib/firmware" -xtype l -delete
   chown -R builder "$dir" "$WORK/live-repo"
-  (cd "$dir" && sudo -u builder env PKGDEST="$WORK/live-repo" makepkg -fd --noconfirm >/dev/null)
+  (cd "$dir" && sudo -u builder env PKGDEST="$WORK/live-repo" PKGEXT=.pkg.tar.zst makepkg -fd --noconfirm >/dev/null)
   repo-add -q "$WORK/live-repo/intent-os-live.db.tar.gz" "$WORK"/live-repo/*.pkg.tar.zst
 }
 
 build_iso() {
-  log "Building installer ISO"
-  local profile=$WORK/profile
+  log "Building installer ISO ($ARCH)"
+  local profile=$WORK/profile mkarchiso=mkarchiso console=ttyS0 limit_mib=560
   rm -rf "$profile" "$WORK/archiso"
-  cp -r /usr/share/archiso/configs/baseline "$profile"
-  build_live_package
+  if [[ $ARCH == aarch64 ]]; then
+    rm -rf "$WORK/archiso-src"
+    git clone -q --depth 1 --branch "$ARCHISO_REF" \
+      https://gitlab.archlinux.org/archlinux/archiso.git "$WORK/archiso-src"
+    cp -r "$WORK/archiso-src/configs/baseline" "$profile"
+    mkarchiso=$WORK/archiso-src/archiso/mkarchiso
+    # archiso's GRUB module list includes x86-only modules (at_keyboard, ...);
+    # keep only the ones that exist for the target.
+    sed -i '/usbserial_pl2303 usbserial_usbdebug video xfs zstd)/a\
+    local _m _have=(); for _m in "${grubmodules[@]}"; do [[ -e "/usr/lib/grub/${grub_target}/${_m}.mod" ]] \&\& _have+=("$_m"); done; grubmodules=("${_have[@]}")' \
+      "$mkarchiso"
+    grep -q '_have+=' "$mkarchiso" || { echo "error: could not patch mkarchiso GRUB modules" >&2; exit 1; }
+    console=ttyAMA0 limit_mib=450
+    # Arch Linux ARM repos; UEFI GRUB only (no BIOS on arm64).
+    cp /etc/pacman.conf "$profile/pacman.conf"
+    sed -i "/^bootmodes=(/,/)/c\\bootmodes=('uefi.grub')" "$profile/profiledef.sh"
+  else
+    cp -r /usr/share/archiso/configs/baseline "$profile"
+    build_live_package
+  fi
 
   # Our own package list and services; drop baseline's cloud and VM tooling.
-  cp "$SRC/iso/packages.x86_64" "$profile/packages.x86_64"
+  cp "$SRC/iso/packages.$ARCH" "$profile/packages.$ARCH"
   rm -rf "$profile/airootfs/etc/systemd/system/"*.wants \
     "$profile/airootfs/etc/systemd/system/systemd-networkd-wait-online.service.d" \
     "$profile/airootfs/etc/systemd/network" "$profile/airootfs/etc/systemd/networkd.conf.d" \
@@ -146,17 +180,27 @@ build_iso() {
     "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
   # The installer needs no docs, translations or headers on the stick.
   sed -i '/^\[options\]/a NoExtract = usr/share/locale/* usr/share/man/* usr/share/doc/* usr/share/info/* usr/share/gtk-doc/* usr/share/gir-1.0/* usr/include/* usr/share/i18n/*\nNoExtract = !usr/share/locale/locale.alias' "$profile/pacman.conf"
-  cat >> "$profile/pacman.conf" <<CONF
+  if [[ $ARCH == aarch64 ]]; then
+    # intent-os-bootstrap exposes /boot/Image as vmlinuz-linux for mkarchiso.
+    cat >> "$profile/pacman.conf" <<CONF
+
+[intent-os]
+SigLevel = Optional TrustAll
+Server = file://$OUT/repo
+CONF
+  else
+    cat >> "$profile/pacman.conf" <<CONF
 
 [intent-os-live]
 SigLevel = Optional TrustAll
 Server = file://$WORK/live-repo
 CONF
+  fi
 
   # Serial console for the QEMU boot test. Harmless on hardware.
   find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
     \( -name '*.conf' -o -name '*.cfg' \) \
-    -exec sed -i 's/archisosearchuuid=%ARCHISO_UUID%/& console=tty0 console=ttyS0,115200/' {} + 2>/dev/null || true
+    -exec sed -i "s/archisosearchuuid=%ARCHISO_UUID%/& console=tty0 console=$console,115200/" {} + 2>/dev/null || true
 
   sed -i -E \
     -e 's/^iso_name=.*/iso_name="intent-os"/' \
@@ -169,17 +213,22 @@ CONF
 
   local etc=$profile/airootfs/etc/intent-os
   mkdir -p "$etc"
-  write_mirrorlist "$etc/mirrorlist"
-  # The installer downloads from the pinned Arch snapshot and the signed
-  # intent-os repo; the ISO carries no packages of its own.
-  local intent_siglevel="Optional TrustAll"
+  # The installer downloads from the signed intent-os repo plus, on x86_64,
+  # the pinned Arch snapshot (Arch Linux ARM has no archive: normal mirrors).
+  local intent_siglevel="Optional TrustAll" distro_repos
   if [[ -d $OUT/keyring ]]; then
     cp "$OUT/keyring/intent-os.gpg" "$OUT/keyring/intent-os-trusted" "$etc/"
     intent_siglevel="Required DatabaseRequired"
   fi
+  if [[ $ARCH == aarch64 ]]; then
+    distro_repos=$'[core]\nInclude = /etc/pacman.d/mirrorlist\n\n[extra]\nInclude = /etc/pacman.d/mirrorlist\n\n[alarm]\nInclude = /etc/pacman.d/mirrorlist'
+  else
+    write_mirrorlist "$etc/mirrorlist"
+    distro_repos=$'[core]\nInclude = /etc/intent-os/mirrorlist\n\n[extra]\nInclude = /etc/intent-os/mirrorlist'
+  fi
   cat > "$etc/pacman-install.conf" <<CONF
 [options]
-Architecture = x86_64
+Architecture = $ARCH
 SigLevel = Required DatabaseOptional
 ParallelDownloads = 5
 
@@ -187,25 +236,21 @@ ParallelDownloads = 5
 SigLevel = $intent_siglevel
 Server = https://github.com/intent-hq/intent-os/releases/download/repo-\$arch
 
-[core]
-Include = /etc/intent-os/mirrorlist
-
-[extra]
-Include = /etc/intent-os/mirrorlist
+$distro_repos
 CONF
 
   rm -rf "$OUT/iso"
-  mkarchiso -v -w "$WORK/archiso" -o "$OUT/iso" "$profile"
+  "$mkarchiso" -v -w "$WORK/archiso" -o "$OUT/iso" "$profile"
   (cd "$OUT/iso" && sha256sum ./*.iso > SHA256SUMS)
   log "Largest parts of the live system"
-  du -x -m --max-depth=5 "$WORK/archiso/x86_64/airootfs/usr" 2>/dev/null | sort -n | tail -n 25
+  du -x -m --max-depth=5 "$WORK/archiso/$ARCH/airootfs/usr" 2>/dev/null | sort -n | tail -n 25
   # The netinstall image must stay small; fail here, not at publish.
-  local iso size limit=$((560 * 1024 * 1024))
+  local iso size limit=$((limit_mib * 1024 * 1024))
   iso=$(ls "$OUT"/iso/*.iso)
   size=$(stat -c %s "$iso")
-  log "ISO size: $((size / 1024 / 1024)) MiB (limit 560 MiB)"
+  log "ISO size: $((size / 1024 / 1024)) MiB (limit $limit_mib MiB)"
   if (( size > limit )); then
-    echo "error: ISO is $((size / 1024 / 1024)) MiB; the netinstall image must stay under 560 MiB" >&2
+    echo "error: ISO is $((size / 1024 / 1024)) MiB; the netinstall image must stay under $limit_mib MiB" >&2
     exit 1
   fi
 }

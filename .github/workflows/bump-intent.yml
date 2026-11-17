@@ -29,11 +29,13 @@ jobs:
           [[ $latest =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version '$latest'"; exit 1; }
           echo "current=$current latest=$latest"
           [ "$current" = "$latest" ] && exit 0
-          file="Intent-${latest}.AppImage"
-          gh release download "v$latest" --repo intent-hq/cloudlands-releases -p "$file" -D "$RUNNER_TEMP"
-          sum=$(sha256sum "$RUNNER_TEMP/$file" | cut -d' ' -f1)
+          base="Intent-${latest}"
+          gh release download "v$latest" --repo intent-hq/cloudlands-releases -p "$base.AppImage" -p "$base-arm64.AppImage" -D "$RUNNER_TEMP"
+          x86=$(sha256sum "$RUNNER_TEMP/$base.AppImage" | cut -d' ' -f1)
+          arm=$(sha256sum "$RUNNER_TEMP/$base-arm64.AppImage" | cut -d' ' -f1)
           sed -i -e "s/^pkgver=.*/pkgver=$latest/" -e "s/^pkgrel=.*/pkgrel=1/" \
-            -e "s/^sha256sums=.*/sha256sums=('$sum')/" "$pkgbuild"
+            -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$x86')/" \
+            -e "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('$arm')/" "$pkgbuild"
           echo "version=$latest" >> "$GITHUB_OUTPUT"
       - name: Commit
         if: steps.check.outputs.version != ''

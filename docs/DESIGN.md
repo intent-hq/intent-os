@@ -118,7 +118,23 @@ stateDiagram-v2
 | Camera | Not supported (needs out-of-tree `facetimehd`). |
 | Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
-## 8. Later
+## 8. aarch64 (UTM on Apple silicon, UEFI ARM machines)
+
+1. **Same shape as x86_64:** a netinstall ISO with the same installer. One ISO per
+   architecture covers real hardware and VMs (UTM boots ISOs).
+2. **Base:** Arch Linux ARM (`linux-aarch64`). archiso is not packaged there, so the build
+   runs `mkarchiso` from the archiso Git tag in `build/in-container.sh` (`ARCHISO_REF`),
+   with the `uefi.grub` boot mode only. Live packages: `iso/packages.aarch64`.
+3. **Kernel name:** `intent-os-bootstrap` ships a pacman hook that hard-links
+   `/boot/Image` to `/boot/vmlinuz-linux`, the name mkarchiso, GRUB and grub-btrfs expect.
+4. **Updates:** Arch Linux ARM has no archive, so aarch64 devices follow normal mirrors.
+   Intent OS packages come from the signed `repo-aarch64` release.
+5. **Tests:** the aarch64 ISO is tested by hand in UTM before release. `tests/smoke.sh`
+   can run the same install-and-boot test on it, but GitHub's arm64 runners have no KVM,
+   so CI runs it only on demand (`arm64_smoke` workflow input).
+6. **Not covered:** bare-metal Apple silicon (needs Asahi's boot chain).
+
+## 9. Later
 
 1. Permanent rollback command (today: boot a snapshot from the GRUB menu).
 2. Disk encryption. The Air has no TPM, so LUKS would need a boot passphrase.

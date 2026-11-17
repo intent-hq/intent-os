@@ -19,13 +19,13 @@ find_first() {
   for f in "$@"; do [[ -f $f ]] && { echo "$f"; return; }; done
   return 1
 }
-OVMF_CODE=$(find_first /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.4m.fd)
-OVMF_VARS=$(find_first /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/x64/OVMF_VARS.4m.fd)
+# x86_64 or aarch64, from the ISO name (intent-os-<build>-<arch>.iso).
+ARCH=x86_64
+[[ $ISO == *aarch64.iso ]] && ARCH=aarch64
 
 result() { echo "$1" | tee "$OUT/result.txt"; }
 fail() { result "FAIL: $1"; exit 1; }
 
-cp "$OVMF_VARS" "$OUT/vars.fd"
 rm -f "$OUT/disk.qcow2"
 qemu-img create -q -f qcow2 "$OUT/disk.qcow2" 32G
 # Serve the packages under test; the VM reaches the host at 10.0.2.2.
@@ -34,17 +34,44 @@ python3 -m http.server 8080 --bind 127.0.0.1 --directory "$REPO_DIR" >"$OUT/repo
 HTTP_PID=$!
 trap 'kill "$HTTP_PID" 2>/dev/null || true' EXIT
 
-# Force the MacBook Air package so the Broadcom DKMS build is tested too.
-printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=UTC\nAFTER=poweroff\nHW=intent-os-hw-macbookair6\nREPO=http://10.0.2.2:8080\n' "$PIN" > "$OUT/auto.conf"
+printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=UTC\nAFTER=poweroff\nREPO=http://10.0.2.2:8080\n' "$PIN" > "$OUT/auto.conf"
 
+# slow scales waits when there is no KVM (aarch64 CI runners may lack it).
+slow=1
+if [[ $ARCH == x86_64 ]]; then
+  # Force the MacBook Air package so the Broadcom DKMS build is tested too.
+  echo "HW=intent-os-hw-macbookair6" >> "$OUT/auto.conf"
+  QEMU=qemu-system-x86_64
+  OVMF_CODE=$(find_first /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.4m.fd)
+  OVMF_VARS=$(find_first /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/x64/OVMF_VARS.4m.fd)
+  cp "$OVMF_VARS" "$OUT/vars.fd"
+  # shellcheck disable=SC2054
+  common=(
+    -enable-kvm -machine q35 -cpu host -smp 2 -m 4096
+    -drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE"
+    -drive "if=pflash,format=raw,file=$OUT/vars.fd"
+    -vga virtio
+  )
+  cdrom=(-cdrom "$ISO")
+else
+  QEMU=qemu-system-aarch64
+  FIRMWARE=$(find_first /usr/share/qemu-efi-aarch64/QEMU_EFI.fd /usr/share/edk2/aarch64/QEMU_EFI.fd /usr/share/AAVMF/AAVMF_CODE.fd)
+  accel=(-accel tcg -cpu max)
+  slow=3
+  if [[ -w /dev/kvm ]]; then accel=(-accel kvm -cpu host); slow=1; fi
+  # shellcheck disable=SC2054
+  common=(
+    -M virt "${accel[@]}" -smp 4 -m 4096 -bios "$FIRMWARE"
+    -device virtio-gpu-pci -device qemu-xhci -device usb-kbd -device usb-tablet
+  )
+  # shellcheck disable=SC2054
+  cdrom=(-drive "file=$ISO,media=cdrom,if=none,id=cd0,readonly=on"
+    -device virtio-scsi-pci -device scsi-cd,drive=cd0)
+fi
 # shellcheck disable=SC2054
-common=(
-  -enable-kvm -machine q35 -cpu host -smp 2 -m 4096
-  -drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE"
-  -drive "if=pflash,format=raw,file=$OUT/vars.fd"
+common+=(
   -drive "file=$OUT/disk.qcow2,if=virtio,format=qcow2"
-  -nic user,model=virtio-net-pci
-  -vga virtio -display none
+  -nic user,model=virtio-net-pci -display none
 )
 
 # Print serial progress and save a screenshot every minute, so a hang is
@@ -62,15 +89,14 @@ watch_vm() {
 echo "== Installing"
 IMON=$OUT/install-monitor.sock
 rm -f "$IMON"
-qemu-system-x86_64 "${common[@]}" \
-  -cdrom "$ISO" \
+"$QEMU" "${common[@]}" "${cdrom[@]}" \
   -fw_cfg "name=opt/intent-os/install,file=$OUT/auto.conf" \
   -serial "file:$OUT/install.log" \
   -monitor "unix:$IMON,server,nowait" &
 INSTALL_PID=$!
 watch_vm "$INSTALL_PID" "$OUT/install.log" "$IMON" install &
 WATCH_PID=$!
-( sleep 1800; kill "$INSTALL_PID" 2>/dev/null ) &
+( sleep $((1800 * slow)); kill "$INSTALL_PID" 2>/dev/null ) &
 TIMER_PID=$!
 wait "$INSTALL_PID" || true
 kill "$TIMER_PID" "$WATCH_PID" 2>/dev/null || true
@@ -79,7 +105,7 @@ grep -q INTENT_OS_INSTALL_OK "$OUT/install.log" || fail "installer did not repor
 echo "== Booting the installed system"
 MON=$OUT/monitor.sock
 rm -f "$MON"
-qemu-system-x86_64 "${common[@]}" \
+"$QEMU" "${common[@]}" \
   -serial "file:$OUT/boot.log" \
   -monitor "unix:$MON,server,nowait" &
 QEMU_PID=$!
@@ -108,15 +134,15 @@ wait_for() {
 
 # Intent loads behind the lock, so boot-ok can arrive before the PIN.
 booted=0
-wait_for INTENT_OS_BOOT_OK 480 && booted=1
+wait_for INTENT_OS_BOOT_OK $((480 * slow)) && booted=1
 screenshot locked
 
 for key in $(echo "$PIN" | grep -o .) ret; do
   monitor "sendkey $key"
   sleep 0.3
 done
-(( booted )) || { wait_for INTENT_OS_BOOT_OK 240 && booted=1; }
-sleep 15
+(( booted )) || { wait_for INTENT_OS_BOOT_OK $((240 * slow)) && booted=1; }
+sleep $((15 * slow))
 screenshot unlocked
 # Quit QEMU directly: Intent OS maps the power button to suspend, so an ACPI
 # power-down would leave the VM asleep and the test waiting forever.

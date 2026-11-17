@@ -1,0 +1,79 @@
+#!/bin/bash
+# First boot of a prebuilt image: choose the PIN and time zone, download and
+# install Intent OS, finish setup, and restart into Intent.
+set -u
+flag=/var/lib/intent-os/firstboot
+[[ -e $flag ]] || exit 0
+FWCFG=/sys/firmware/qemu_fw_cfg/by_name/opt/intent-os/repo/raw
+
+say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+retry() {
+  until "$@"; do
+    printf '\n\033[31mThat step failed.\033[0m Press Enter to try again. '
+    read -r _
+  done
+}
+
+echo "INTENT_OS_FIRSTBOOT" > /dev/kmsg 2>/dev/null || true
+clear
+say "Welcome to Intent OS"
+
+if [[ ! -e /var/lib/intent-os/pin-set ]]; then
+  echo "Choose a PIN (4 to 12 digits). You enter it to unlock this device and for sudo."
+  while :; do
+    read -rsp "PIN: " a; echo
+    [[ $a =~ ^[0-9]{4,12}$ ]] || { echo "Use 4 to 12 digits."; continue; }
+    read -rsp "Confirm PIN: " b; echo
+    [[ $a == "$b" ]] && break
+    echo "The PINs do not match."
+  done
+  printf 'intent:%s\n' "$a" | chpasswd
+  while :; do
+    read -rp "Time zone, for example America/Los_Angeles [UTC]: " tz
+    tz=${tz:-UTC}
+    [[ -f /usr/share/zoneinfo/$tz ]] && break
+    echo "Unknown time zone."
+  done
+  ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
+  touch /var/lib/intent-os/pin-set
+fi
+
+say "Waiting for the network"
+until nm-online -q -t 30; do echo "No network yet. Check the VM's network settings."; done
+
+# Tests point the intent-os repo at the packages under test (QEMU fw_cfg).
+modprobe -q qemu_fw_cfg 2>/dev/null || true
+if [[ -r $FWCFG ]] && url=$(head -n1 "$FWCFG") && [[ $url =~ ^https?://[A-Za-z0-9.:/_-]+$ ]]; then
+  sed -i "/^\[intent-os\]/,/^\$/{s|^Server = .*|Server = $url|;s|^SigLevel = .*|SigLevel = Optional TrustAll|}" /etc/pacman.conf
+fi
+
+say "Downloading Intent OS (about 1 GB)"
+retry pacman -Syu --noconfirm --needed intent-os-base intent-os-session intent-os-update
+
+say "Finishing setup"
+rm -f /etc/mkinitcpio.conf.d/zz-intent-os-image.conf
+retry mkinitcpio -P
+if ! snapper list-configs 2>/dev/null | grep -q '^root'; then
+  umount /.snapshots && rmdir /.snapshots
+  snapper --no-dbus -c root create-config /
+  btrfs subvolume delete /.snapshots
+  mkdir /.snapshots && mount /.snapshots && chmod 750 /.snapshots
+  sed -i -E -e 's/^TIMELINE_CREATE=.*/TIMELINE_CREATE="no"/' \
+    -e 's/^NUMBER_LIMIT=.*/NUMBER_LIMIT="10"/' \
+    -e 's/^NUMBER_LIMIT_IMPORTANT=.*/NUMBER_LIMIT_IMPORTANT="5"/' /etc/snapper/configs/root
+  snapper --no-dbus -c root create -d "Intent OS installed" -c number
+fi
+mkdir -p /efi/intent-os
+[[ -f /efi/intent-os/grubenv ]] || grub-editenv /efi/intent-os/grubenv create
+grub-editenv /efi/intent-os/grubenv set boot_success=1
+sed -i 's/^#\?GRUB_BTRFS_SUBMENUNAME=.*/GRUB_BTRFS_SUBMENUNAME="Intent OS snapshots"/' \
+  /etc/default/grub-btrfs/config 2>/dev/null || true
+retry grub-mkconfig -o /boot/grub/grub.cfg
+systemctl enable greetd fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer
+systemctl set-default graphical.target
+
+rm -f "$flag"
+systemctl disable intent-os-firstboot.service 2>/dev/null || true
+say "Intent OS is ready. Restarting..."
+sleep 3
+systemctl reboot

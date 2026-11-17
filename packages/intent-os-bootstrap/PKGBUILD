@@ -1,0 +1,16 @@
+# First-boot installer for prebuilt images (the arm64 VM image). The image
+# ships a minimal system plus this package; on first boot it asks for the
+# PIN, downloads Intent OS, finishes setup, and restarts into Intent.
+pkgname=intent-os-bootstrap
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS first-boot installer for prebuilt images"
+arch=(any)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(base grub efibootmgr btrfs-progs dosfstools networkmanager sudo curl)
+
+package() {
+  cp -a "$startdir/files/." "$pkgdir/"
+  chmod 0755 "$pkgdir"/usr/lib/intent-os/*
+}

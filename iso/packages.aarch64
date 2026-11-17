@@ -1,0 +1,21 @@
+# Complete package list for the arm64 live installer (archiso baseline on
+# Arch Linux ARM). Keep it to what intent-os-install uses.
+base
+linux-aarch64
+archlinuxarm-keyring
+mkinitcpio
+mkinitcpio-archiso
+# Exposes /boot/Image as vmlinuz-linux, the name mkarchiso and GRUB expect.
+intent-os-bootstrap
+arch-install-scripts
+btrfs-progs
+dosfstools
+gptfdisk
+networkmanager
+wpa_supplicant
+jq
+# Wi-Fi firmware for common USB and PCIe adapters.
+linux-firmware-atheros
+linux-firmware-broadcom
+linux-firmware-mediatek
+linux-firmware-realtek

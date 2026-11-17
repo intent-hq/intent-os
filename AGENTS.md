@@ -14,5 +14,6 @@ for commit, PR, and merge rules. They apply here.
    the component repo and link it from the PR here. Keep such changes rare.
 4. Keep the base thin. Add a package only when boot, hardware, the session, updates, or
    recovery need it. Record why in the PKGBUILD or the design doc.
-5. Every change to the boot, session, or update path must pass the QEMU boot-to-Intent
-   smoke test before merge.
+5. Every change to the boot, session, or update path must pass the x86_64 QEMU
+   boot-to-Intent smoke test before merge. The aarch64 ISO is tested by hand in UTM
+   (CI's arm64 runners have no KVM); run the workflow with `arm64_smoke` to test it in CI.
