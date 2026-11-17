@@ -15,6 +15,7 @@ handle_clicks() {
     [[ $line == "[" || -z $line ]] && continue
     name=$(jq -r '.name // empty' <<<"$line" 2>/dev/null) || continue
     case $name in
+      terminal) intent-os-terminal >/dev/null 2>&1 & ;;
       restart-intent) systemctl --user restart intent.service & ;;
       reboot) confirm "Restart this device?" "Restart" "systemctl reboot" ;;
       poweroff) confirm "Shut down this device?" "Shut down" "systemctl poweroff" ;;
@@ -68,6 +69,7 @@ while :; do
   [[ -n $bat ]] && blocks+=("$(block battery "$bat" "")")
   blocks+=(
     "$(block clock "$(date '+%a %-d %b  %H:%M')" "")"
+    "$(block terminal "Terminal" "$dim")"
     "$(block restart-intent "$intent_label" "$intent_color")"
     "$(block reboot "$reboot_label" "$reboot_color")"
     "$(block poweroff "Shut down" "$dim")"

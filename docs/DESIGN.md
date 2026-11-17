@@ -36,7 +36,7 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    session-start: swaylock first, then intent-os-session.target
        intent.service      Intent, supervised
        intent-os-idle      lock after 5 min idle and before sleep
-   swaybar (top, 24 px)    network, battery, clock, Restart Intent, Restart, Shut down
+   swaybar (top, 24 px)    network, battery, clock, Terminal, Restart Intent, Restart, Shut down
 ```
 
 1. **sway, not cage.** The PIN lock needs `ext-session-lock`, which cage lacks. sway also
@@ -48,7 +48,11 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
 4. **Controls** are in the top-right of the bar. Restart and Shut down ask once in a
    swaynag bar (no password). A polkit rule lets `wheel` reboot and power off from user
    services.
-5. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
+5. **Terminal** opens a floating `foot` window over Intent (also Cmd+Return). It starts
+   with `intent-os-agents`, a menu that installs a coding agent (Claude Code, Codex,
+   OpenCode, Auggie, Factory Droid, Grok) with the same commands Intent shows, then
+   offers to sign in. Agents install into `~/.local`, so OS rollback keeps them.
+6. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
    Ctrl+Cmd+Q locks. The power key suspends (it sits next to Delete on the Air).
 
 ## 5. Supervision
