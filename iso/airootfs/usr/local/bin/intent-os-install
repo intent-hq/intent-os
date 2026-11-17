@@ -54,7 +54,12 @@ load_auto_config() {
   done < "$source"
   [[ -n $DISK || -n $ROOT_DEV ]] || die "unattended config needs DISK (or ESP_DEV and ROOT_DEV)"
   (( FIRSTBOOT )) || [[ -n $PIN ]] || die "unattended config needs PIN (or FIRSTBOOT=1)"
-  (( IMAGE )) && return 0
+  if (( IMAGE )); then
+    # Write the image at maximum compression; the device mounts with the
+    # normal fast level afterwards (fstab is rewritten in install_packages).
+    BTRFS_OPTS=noatime,compress-force=zstd:15
+    return 0
+  fi
   TIMEZONE=${TIMEZONE:-UTC}
   if [[ -w /dev/ttyS0 ]]; then
     exec > >(tee /dev/ttyS0) 2>&1
@@ -234,6 +239,7 @@ install_packages() {
       > "$MNT/etc/mkinitcpio.conf.d/zz-intent-os-image.conf"
   fi
   genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' >> "$MNT/etc/fstab"
+  sed -i 's/compress-force=zstd:15/compress=zstd:1/' "$MNT/etc/fstab"
 }
 
 configure_pacman() {
