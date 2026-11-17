@@ -83,7 +83,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Install QEMU
-        run: sudo apt-get update -q && sudo apt-get install -yq qemu-system-x86 qemu-utils ovmf socat
+        run: sudo apt-get update -q && sudo apt-get install -yq qemu-system-x86 qemu-utils ovmf socat imagemagick
       - name: Install and boot into Intent
         timeout-minutes: 50
         run: make smoke
@@ -94,6 +94,7 @@ jobs:
           path: |
             out/smoke/*.log
             out/smoke/*.png
+            out/smoke/*.ppm
             out/smoke/result.txt
 
   publish:

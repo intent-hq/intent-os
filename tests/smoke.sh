@@ -49,7 +49,7 @@ watch_vm() {
     sleep 60
     n=$((n + 1))
     echo "-- $name +${n}m: $(tail -n 2 "$log" 2>/dev/null | tr -d '\r' | tr '\n' ' ' | cut -c1-200)"
-    { echo "screendump -f png $OUT/$name-latest.png"; sleep 2; } | socat - "UNIX-CONNECT:$mon" >/dev/null 2>&1 || true
+    { echo "screendump $OUT/$name-latest.ppm"; sleep 2; } | socat - "UNIX-CONNECT:$mon" >/dev/null 2>&1 || true
   done
 }
 
@@ -81,6 +81,12 @@ watch_vm "$QEMU_PID" "$OUT/boot.log" "$MON" boot &
 WATCH_PID=$!
 trap 'kill "$QEMU_PID" "$WATCH_PID" 2>/dev/null || true' EXIT
 
+# QEMU's PPM screendump works without PNG support; convert for the artifacts.
+screenshot() {
+  monitor "screendump $OUT/$1.ppm"
+  convert "$OUT/$1.ppm" "$OUT/$1.png" 2>/dev/null && rm -f "$OUT/$1.ppm"
+}
+
 # Keep the connection open briefly: QEMU drops a command whose client hangs up at once.
 monitor() { { echo "$1"; sleep 2; } | socat - "UNIX-CONNECT:$MON" >/dev/null; }
 
@@ -97,7 +103,7 @@ wait_for() {
 # Intent loads behind the lock, so boot-ok can arrive before the PIN.
 booted=0
 wait_for INTENT_OS_BOOT_OK 480 && booted=1
-monitor "screendump -f png $OUT/locked.png"
+screenshot locked
 
 for key in $(echo "$PIN" | grep -o .) ret; do
   monitor "sendkey $key"
@@ -105,12 +111,16 @@ for key in $(echo "$PIN" | grep -o .) ret; do
 done
 (( booted )) || { wait_for INTENT_OS_BOOT_OK 240 && booted=1; }
 sleep 15
-monitor "screendump -f png $OUT/unlocked.png"
+screenshot unlocked
 # Quit QEMU directly: Intent OS maps the power button to suspend, so an ACPI
 # power-down would leave the VM asleep and the test waiting forever.
 monitor "quit" || kill "$QEMU_PID" 2>/dev/null || true
 wait "$QEMU_PID" 2>/dev/null || true
 trap - EXIT
+for f in "$OUT"/*-latest.ppm; do
+  [[ -f $f ]] && convert "$f" "${f%.ppm}.png" 2>/dev/null && rm -f "$f"
+done
+ls -l "$OUT"/*.png 2>/dev/null || echo "warning: no screenshots were saved"
 
 (( booted )) || fail "Intent window never appeared (no INTENT_OS_BOOT_OK on serial)"
 result "PASS: installed, booted, Intent window visible"
