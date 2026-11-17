@@ -52,6 +52,9 @@ prepare() {
     mkdir -p "$OUT/keyring"
     gpg --batch --armor --export "$KEY_ID" > "$OUT/keyring/intent-os.gpg"
     echo "$KEY_ID:4:" > "$OUT/keyring/intent-os-trusted"
+    # The aarch64 ISO installs intent-os-bootstrap from the signed local repo.
+    pacman-key --add "$OUT/keyring/intent-os.gpg" >/dev/null
+    pacman-key --lsign-key "$KEY_ID" >/dev/null
   fi
 }
 
