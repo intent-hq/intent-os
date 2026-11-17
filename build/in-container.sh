@@ -111,6 +111,17 @@ depends=("linux=$linux_ver")
 options=(!strip !debug)
 package() { cp -a "\$startdir/root/." "\$pkgdir/"; }
 PKG
+  # iwlwifi ships many API versions per chip; the driver loads the newest it
+  # supports, so the two newest per chip are enough.
+  local f
+  while read -r f; do rm -f "$dir/root/usr/lib/firmware/$f"; done < <(
+    cd "$dir/root/usr/lib/firmware" &&
+      find . -name 'iwlwifi-*.ucode*' | sed 's|^\./||' |
+      awk '{ n = $0; sub(/\.ucode.*$/, "", n); v = n; sub(/^.*-/, "", v); gsub(/[^0-9]/, "", v);
+             p = n; sub(/-[^-]*$/, "", p); print p "\t" (v == "" ? 0 : v) "\t" $0 }' |
+      sort -t $'\t' -k1,1 -k2,2nr |
+      awk -F '\t' '{ if (++seen[$1] > 2) print $3 }')
+  find "$dir/root/usr/lib/firmware" -xtype l -delete
   chown -R builder "$dir" "$WORK/live-repo"
   (cd "$dir" && sudo -u builder env PKGDEST="$WORK/live-repo" makepkg -fd --noconfirm >/dev/null)
   repo-add -q "$WORK/live-repo/intent-os-live.db.tar.gz" "$WORK"/live-repo/*.pkg.tar.zst
@@ -133,6 +144,8 @@ build_iso() {
   mkdir -p "$profile/airootfs/etc/systemd/system/multi-user.target.wants"
   ln -sf /usr/lib/systemd/system/NetworkManager.service \
     "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+  # The installer needs no docs, translations or headers on the stick.
+  sed -i '/^\[options\]/a NoExtract = usr/share/locale/* usr/share/man/* usr/share/doc/* usr/share/info/* usr/share/gtk-doc/* usr/share/gir-1.0/* usr/include/* usr/share/i18n/*\nNoExtract = !usr/share/locale/locale.alias' "$profile/pacman.conf"
   cat >> "$profile/pacman.conf" <<CONF
 
 [intent-os-live]
