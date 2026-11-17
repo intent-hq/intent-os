@@ -101,7 +101,7 @@ stateDiagram-v2
 |---|---|
 | Boot | UEFI. GRUB installs to the fallback path (`--removable`), so no NVRAM writes. |
 | Graphics | Intel HD 5000 (Haswell), Mesa `crocus`. VA-API through `libva-intel-driver`. |
-| Wi-Fi | Broadcom BCM4360. `broadcom-wl`, prebuilt for the repo kernel; also on the ISO. |
+| Wi-Fi | Broadcom BCM4360. `broadcom-wl-dkms` (Arch no longer ships a prebuilt `wl`); it rebuilds on each kernel update. Also on the ISO. The CI boot test installs it. |
 | Suspend | Works. XHC1 and ARPT wake sources are off to stop instant wake-up. |
 | Keyboard, trackpad | `hid_apple` (media keys first), `bcm5974`; tap, natural scroll, click-finger. |
 | Audio | Cirrus CS4208 through PipeWire. |

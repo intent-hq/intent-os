@@ -10,7 +10,7 @@ Target = glibc
 Target = mesa
 Target = sway
 Target = wlroots*
-Target = broadcom-wl
+Target = broadcom-wl-dkms
 
 [Action]
 Description = Marking that a restart is needed...

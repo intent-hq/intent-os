@@ -27,7 +27,8 @@ fail() { result "FAIL: $1"; exit 1; }
 cp "$OVMF_VARS" "$OUT/vars.fd"
 rm -f "$OUT/disk.qcow2"
 qemu-img create -q -f qcow2 "$OUT/disk.qcow2" 32G
-printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=UTC\nAFTER=poweroff\n' "$PIN" > "$OUT/auto.conf"
+# Force the MacBook Air package so the Broadcom DKMS build is tested too.
+printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=UTC\nAFTER=poweroff\nHW=intent-os-hw-macbookair6\n' "$PIN" > "$OUT/auto.conf"
 
 # shellcheck disable=SC2054
 common=(

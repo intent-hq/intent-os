@@ -3,7 +3,8 @@
 # package repo on this USB stick, so it works offline.
 #
 # Unattended mode (tests): QEMU passes KEY=VALUE lines through fw_cfg
-# opt/intent-os/install with DISK, PIN, TIMEZONE, and AFTER=poweroff|reboot.
+# opt/intent-os/install with DISK, PIN, TIMEZONE, AFTER=poweroff|reboot, and
+# optional HW (a hardware package to force, so tests cover its install).
 set -euo pipefail
 
 OWNER=intent
@@ -13,7 +14,7 @@ OFFLINE_CONF=/etc/intent-os/pacman-offline.conf
 MNT=/mnt
 BTRFS_OPTS=noatime,compress=zstd:1
 
-AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot
+AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot HW=""
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -29,6 +30,7 @@ load_auto_config() {
       PIN) [[ $value =~ ^[0-9]{4,12}$ ]] && PIN=$value ;;
       TIMEZONE) [[ -f /usr/share/zoneinfo/$value ]] && TIMEZONE=$value ;;
       AFTER) [[ $value =~ ^(poweroff|reboot)$ ]] && AFTER=$value ;;
+      HW) [[ $value =~ ^intent-os-hw-[a-z0-9]+$ ]] && HW=$value ;;
     esac
   done < "$FWCFG"
   [[ -n $DISK && -n $PIN ]] || die "unattended config needs DISK and PIN"
@@ -161,6 +163,7 @@ partition() {
 
 hardware_packages() {
   local product
+  [[ -n $HW ]] && { echo "$HW"; return; }
   product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
   case $product in
     MacBookAir6,1|MacBookAir6,2) echo intent-os-hw-macbookair6 ;;
@@ -219,7 +222,7 @@ configure_system() {
   configure_pacman
 
   local hw_units=""
-  [[ -n $(hardware_packages) ]] && hw_units="intent-os-macbookair6-wakeup.service"
+  [[ $(hardware_packages) == intent-os-hw-macbookair6 ]] && hw_units="intent-os-macbookair6-wakeup.service"
 
   arch-chroot "$MNT" /bin/bash -euo pipefail -s -- "$TIMEZONE" "$OWNER" "$hw_units" <<'CHROOT'
 tz=$1 owner=$2 hw_units=$3

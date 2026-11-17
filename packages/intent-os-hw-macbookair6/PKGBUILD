@@ -9,8 +9,8 @@ pkgdesc="Intent OS hardware support for MacBook Air 6,x (2013-2014)"
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
 license=(Apache-2.0)
-# broadcom-wl is prebuilt against the repo kernel, so nothing compiles on the device.
-depends=(intent-os-base linux broadcom-wl libva-intel-driver)
+# Arch ships the wl driver only as DKMS; it rebuilds on each kernel update.
+depends=(intent-os-base linux linux-headers broadcom-wl-dkms libva-intel-driver)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
