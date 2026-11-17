@@ -23,14 +23,11 @@ depends_x86_64=(
 )
 # Arch Linux ARM generic kernel. The arm64 target today is VMs on Apple
 # silicon Macs, which need no firmware.
-depends_aarch64=(linux-aarch64 archlinuxarm-keyring)
+depends_aarch64=(linux-aarch64 archlinuxarm-keyring intent-os-bootstrap)
 backup=(etc/sudoers.d/10-intent-os)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
-  if [[ $CARCH == aarch64 ]]; then
-    cp -a "$startdir/files-aarch64/." "$pkgdir/"
-  fi
   chmod 0750 "$pkgdir/etc/sudoers.d"
   chmod 0440 "$pkgdir/etc/sudoers.d/10-intent-os"
   chmod 0755 "$pkgdir/etc/grub.d/05_intent-os" "$pkgdir"/usr/lib/intent-os/*

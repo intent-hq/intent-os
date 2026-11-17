@@ -10,7 +10,9 @@
 #
 # Image mode (build/make-vm-image.sh): INTENT_OS_INSTALL_CONFIG names a file with
 # the same keys plus IMAGE=1, ESP_DEV and ROOT_DEV (pre-made partitions) and
-# FIRSTBOOT=1 (no PIN yet; the device asks for it on first boot).
+# FIRSTBOOT=1 (no PIN yet; the device asks for it on first boot), and
+# BOOTSTRAP=1 (install only a minimal system plus intent-os-bootstrap; the
+# device downloads the rest of Intent OS on first boot).
 set -euo pipefail
 
 OWNER=intent
@@ -21,7 +23,7 @@ MNT=/mnt
 BTRFS_OPTS=noatime,compress=zstd:1
 
 AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot HW="" REPO=""
-IMAGE=0 FIRSTBOOT=0 ESP_DEV="" ROOT_DEV="" CONSOLE=""
+IMAGE=0 FIRSTBOOT=0 BOOTSTRAP=0 ESP_DEV="" ROOT_DEV="" CONSOLE=""
 ARCH=$(uname -m)
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -47,6 +49,7 @@ load_auto_config() {
       REPO) [[ $value =~ ^(https?|file)://[A-Za-z0-9.:/_-]+$ ]] && REPO=$value ;;
       IMAGE) [[ $value == 1 ]] && IMAGE=1 ;;
       FIRSTBOOT) [[ $value == 1 ]] && FIRSTBOOT=1 ;;
+      BOOTSTRAP) [[ $value == 1 ]] && BOOTSTRAP=1 FIRSTBOOT=1 ;;
       ESP_DEV) [[ $value =~ ^/dev/[a-z0-9]+$ ]] && ESP_DEV=$value ;;
       ROOT_DEV) [[ $value =~ ^/dev/[a-z0-9]+$ ]] && ROOT_DEV=$value ;;
       CONSOLE) [[ $value =~ ^[A-Za-z0-9,=\ ]+$ ]] && CONSOLE=$value ;;
@@ -231,11 +234,18 @@ install_packages() {
     [[ $REPO == file://* ]] && sed -i 's|^SigLevel = Required DatabaseRequired$|SigLevel = Optional TrustAll|' "$conf"
   fi
   trust_intent_os_key
+  local packages=(intent-os-base intent-os-session intent-os-update)
+  if (( BOOTSTRAP )); then
+    packages=(intent-os-bootstrap)
+    if [[ $ARCH == aarch64 ]]; then packages+=(linux-aarch64 archlinuxarm-keyring); else packages+=(linux); fi
+    hw=""
+  fi
   # shellcheck disable=SC2086
-  pacstrap -C "$conf" -G -M "$MNT" intent-os-base intent-os-session intent-os-update $hw
+  pacstrap -C "$conf" -G -M "$MNT" "${packages[@]}" $hw
   if (( IMAGE )); then
     # Built in a container: keep every driver, not just the build host's.
-    echo 'HOOKS=(base udev modconf kms keyboard keymap consolefont block filesystems grub-btrfs-overlayfs)' \
+    mkdir -p "$MNT/etc/mkinitcpio.conf.d"
+    echo 'HOOKS=(base udev modconf kms keyboard keymap consolefont block filesystems)' \
       > "$MNT/etc/mkinitcpio.conf.d/zz-intent-os-image.conf"
   fi
   genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' >> "$MNT/etc/fstab"
@@ -250,7 +260,15 @@ configure_pacman() {
     install -Dm644 /etc/intent-os/mirrorlist "$MNT/etc/pacman.d/intent-os-mirrorlist"
     sed -i 's|^Include = /etc/pacman.d/mirrorlist|Include = /etc/pacman.d/intent-os-mirrorlist|' "$conf"
   fi
-  if [[ -f /etc/intent-os/intent-os.gpg ]]; then
+  if (( BOOTSTRAP )) && [[ ! -f /etc/intent-os/intent-os.gpg ]]; then
+    # Unsigned local build: first boot still needs the intent-os repo.
+    cat >> "$conf" <<'EOF'
+
+[intent-os]
+SigLevel = Optional TrustAll
+Server = https://github.com/intent-hq/intent-os/releases/download/repo-$arch
+EOF
+  elif [[ -f /etc/intent-os/intent-os.gpg ]]; then
     install -Dm644 /etc/intent-os/intent-os.gpg "$MNT/usr/share/pacman/keyrings/intent-os.gpg"
     install -Dm644 /etc/intent-os/intent-os-trusted "$MNT/usr/share/pacman/keyrings/intent-os-trusted"
     cat >> "$conf" <<'EOF'
@@ -291,15 +309,17 @@ configure_system() {
     "$MNT/etc/default/grub-btrfs/config" 2>/dev/null || true
   configure_pacman
 
-  local hw_units=""
+  local hw_units="" units="greetd fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer"
   [[ $(hardware_packages) == intent-os-hw-macbookair6 ]] && hw_units="intent-os-macbookair6-wakeup.service"
+  # Bootstrap images enable the rest on first boot, once it is installed.
+  (( BOOTSTRAP )) && units="" hw_units=""
 
   local grub_target=x86_64-efi
   [[ $ARCH == aarch64 ]] && grub_target=arm64-efi
   (( FIRSTBOOT )) && hw_units+=" intent-os-firstboot.service"
 
-  arch-chroot "$MNT" /bin/bash -euo pipefail -s -- "$TIMEZONE" "$OWNER" "$hw_units" "$(keyring_name)" "$grub_target" <<'CHROOT'
-tz=$1 owner=$2 hw_units=$3 keyring=$4 grub_target=$5
+  arch-chroot "$MNT" /bin/bash -euo pipefail -s -- "$TIMEZONE" "$OWNER" "$hw_units" "$(keyring_name)" "$grub_target" "$units" <<'CHROOT'
+tz=$1 owner=$2 hw_units=$3 keyring=$4 grub_target=$5 units=$6
 ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
 hwclock --systohc || true
 locale-gen
@@ -316,8 +336,8 @@ grub-editenv /efi/intent-os/grubenv create
 grub-editenv /efi/intent-os/grubenv set boot_success=1
 grub-mkconfig -o /boot/grub/grub.cfg
 grep -q '^[[:space:]]*linux[[:space:]]' /boot/grub/grub.cfg || { echo "error: grub.cfg has no kernel entry" >&2; exit 1; }
-systemctl enable NetworkManager systemd-resolved systemd-timesyncd greetd \
-  fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer $hw_units
+# shellcheck disable=SC2086
+systemctl enable NetworkManager systemd-resolved systemd-timesyncd $units $hw_units
 systemctl set-default graphical.target
 CHROOT
   if (( FIRSTBOOT )); then
@@ -392,7 +412,7 @@ main() {
   partition
   install_packages
   configure_system
-  configure_snapper
+  (( BOOTSTRAP )) || configure_snapper
   copy_network
   finish
 }

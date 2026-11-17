@@ -1,6 +1,7 @@
 #!/bin/bash
 # arm64 VM image test in QEMU (KVM when present, else TCG):
-#   1. Boot the image; answer the first-boot PIN and time zone prompts.
+#   1. Boot the image; answer the first-boot PIN and time zone prompts. First
+#      boot downloads Intent OS from the packages under test (served here).
 #   2. Wait until Intent's window is on screen (INTENT_OS_BOOT_OK on serial).
 #   3. Screenshot the lock screen, type the PIN, screenshot again.
 # Artifacts: boot.log, locked.png, unlocked.png, boot-latest.png, result.txt.
@@ -32,6 +33,11 @@ if [[ -w /dev/kvm ]]; then
 fi
 
 cp "$IMG" "$OUT/disk.qcow2"
+
+# Serve the packages under test; the VM reaches the host at 10.0.2.2.
+REPO_DIR=$(cd "$(dirname "$IMG")/../repo" && pwd)
+python3 -m http.server 8080 --bind 127.0.0.1 --directory "$REPO_DIR" >"$OUT/repo-http.log" 2>&1 &
+HTTP_PID=$!
 MON=$OUT/monitor.sock
 rm -f "$MON"
 # shellcheck disable=SC2054
@@ -39,9 +45,10 @@ qemu-system-aarch64 -M virt "${accel[@]}" -smp 4 -m 4096 -bios "$FIRMWARE" \
   -drive "file=$OUT/disk.qcow2,if=virtio,format=qcow2" \
   -device virtio-gpu-pci -device qemu-xhci -device usb-kbd -device usb-tablet \
   -nic user,model=virtio-net-pci -display none \
+  -fw_cfg name=opt/intent-os/repo,string=http://10.0.2.2:8080 \
   -serial "file:$OUT/boot.log" -monitor "unix:$MON,server,nowait" &
 QEMU_PID=$!
-trap 'kill "$QEMU_PID" 2>/dev/null || true' EXIT
+trap 'kill "$QEMU_PID" "$HTTP_PID" 2>/dev/null || true' EXIT
 
 # Keep the connection open briefly: QEMU drops a command whose client hangs up at once.
 monitor() { { echo "$1"; sleep 2; } | socat - "UNIX-CONNECT:$MON" >/dev/null; }
@@ -81,9 +88,9 @@ type_line "$PIN"
 sleep 2
 type_line ""
 
-echo "== Waiting for Intent"
+echo "== Waiting for the first-boot install, restart, and Intent"
 booted=0
-wait_for INTENT_OS_BOOT_OK $((600 * slow)) && booted=1
+wait_for INTENT_OS_BOOT_OK $((1500 * slow)) && booted=1
 screenshot locked || true
 type_line "$PIN"
 sleep $((15 * slow))
@@ -91,6 +98,7 @@ screenshot unlocked || true
 monitor "quit" || kill "$QEMU_PID" 2>/dev/null || true
 wait "$QEMU_PID" 2>/dev/null || true
 trap - EXIT
+kill "$HTTP_PID" 2>/dev/null || true
 
 (( booted )) || fail "Intent window never appeared (no INTENT_OS_BOOT_OK on serial)"
 result "PASS: first boot PIN set, Intent window visible"

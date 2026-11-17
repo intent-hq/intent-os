@@ -31,7 +31,8 @@ console.
 
 ## Run in a VM on an Apple silicon Mac (UTM)
 
-The release also has an arm64 disk image, `intent-os-*-arm64.qcow2`.
+The release also has a small arm64 disk image, `intent-os-*-arm64.qcow2` (a few hundred
+MB). Like the x86_64 netinstall, it downloads the rest on first boot.
 
 1. Install [UTM](https://mac.getutm.app/) and download the `.qcow2` file.
 2. In UTM, choose **Create a New Virtual Machine → Virtualize → Other**, and skip the
@@ -40,7 +41,8 @@ The release also has an arm64 disk image, `intent-os-*-arm64.qcow2`.
    - **Drives:** delete the empty drive, then **New… → Import** the `.qcow2` (VirtIO).
    - **Display:** choose `virtio-gpu-pci` (not `virtio-ramfb`).
    - **Network:** Shared Network.
-4. Start the VM. On first boot it asks for a PIN and a time zone, then opens Intent.
+4. Start the VM. On first boot it asks for a PIN and a time zone, downloads Intent OS
+   (about 1 GB), restarts, and opens Intent.
 
 The arm64 image uses Arch Linux ARM. It updates from Arch Linux ARM mirrors, which have
 no tested snapshot like the x86_64 build.

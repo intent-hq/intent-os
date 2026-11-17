@@ -1,7 +1,8 @@
 [Unit]
-Description=Intent OS first boot: choose the PIN
+Description=Intent OS first boot: PIN, download, setup
 ConditionPathExists=/var/lib/intent-os/firstboot
-After=systemd-user-sessions.service plymouth-quit-wait.service
+Wants=network-online.target
+After=systemd-user-sessions.service plymouth-quit-wait.service NetworkManager.service
 Before=greetd.service
 Conflicts=getty@tty1.service
 

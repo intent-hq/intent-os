@@ -122,11 +122,13 @@ stateDiagram-v2
 
 1. **Base:** Arch Linux ARM (`linux-aarch64`). Same packages and session as x86_64,
    except the MacBook Air package and firmware.
-2. **Shape:** a ready-to-boot qcow2 disk, not an installer. CI runs the normal installer
-   in image mode onto loop devices inside an Arch Linux ARM container, with a generic
-   initramfs (no `autodetect`), then compresses the disk.
-3. **First boot:** `intent-os-firstboot.service` asks for the PIN and time zone on the
-   console before greetd starts.
+2. **Shape:** a small ready-to-boot qcow2 disk, the VM counterpart of the netinstall
+   ISO. CI runs the installer in image and bootstrap mode onto loop devices inside an
+   Arch Linux ARM container: kernel, network, GRUB and `intent-os-bootstrap` only, with
+   a generic initramfs. The build fails above 400 MiB.
+3. **First boot:** `intent-os-firstboot.service` (from `intent-os-bootstrap`) asks for
+   the PIN and time zone on the console, downloads Intent OS, sets up snapshots, GRUB
+   and services, and restarts into Intent.
 4. **Kernel name:** a pacman hook copies `/boot/Image` to `/boot/vmlinuz-linux` so
    `grub-mkconfig` (and grub-btrfs snapshots) find it.
 5. **Updates:** Arch Linux ARM has no archive, so arm64 devices follow normal mirrors.

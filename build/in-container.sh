@@ -13,7 +13,7 @@ SRC=/src
 OUT=$SRC/out
 WORK=/tmp/intent-os
 ARCH=$(uname -m)
-PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update)
+PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-bootstrap)
 [[ $ARCH == x86_64 ]] && PACKAGES+=(intent-os-hw-macbookair6)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
@@ -222,9 +222,10 @@ CONF
   fi
 }
 
-# arm64 VM image: install with the normal installer onto two loop devices
-# (ESP and btrfs root) inside a sparse raw disk, then compress to qcow2. The
-# device asks for the PIN on first boot.
+# arm64 VM image: install a minimal system plus intent-os-bootstrap with the
+# normal installer onto two loop devices (ESP and btrfs root) inside a sparse
+# raw disk, then compress to qcow2. On first boot the VM asks for the PIN and
+# downloads the rest of Intent OS.
 build_vm_image() {
   log "Building the $ARCH VM disk image"
   local img=$WORK/intent-os.raw esp root s1 n1 s2 n2
@@ -265,7 +266,7 @@ Include = /etc/pacman.d/mirrorlist
 CONF
   cat > "$WORK/vm.conf" <<CONF
 IMAGE=1
-FIRSTBOOT=1
+BOOTSTRAP=1
 ESP_DEV=$esp
 ROOT_DEV=$root
 TIMEZONE=UTC
@@ -276,13 +277,13 @@ CONF
   losetup -d "$esp" "$root"
   trap - EXIT
 
-  local qcow=$OUT/vm/intent-os-$BUILD_ID-arm64.qcow2 size limit=$((1900 * 1024 * 1024))
+  local qcow=$OUT/vm/intent-os-$BUILD_ID-arm64.qcow2 size limit=$((400 * 1024 * 1024))
   qemu-img convert -c -O qcow2 -o compression_type=zstd "$img" "$qcow"
   rm -f "$img"
   (cd "$OUT/vm" && sha256sum ./*.qcow2 > SHA256SUMS)
   size=$(stat -c %s "$qcow")
-  log "VM image size: $((size / 1024 / 1024)) MiB (limit 1900 MiB)"
-  (( size <= limit )) || { echo "error: VM image is over GitHub's 2 GiB asset limit" >&2; exit 1; }
+  log "VM image size: $((size / 1024 / 1024)) MiB (limit 400 MiB)"
+  (( size <= limit )) || { echo "error: the bootstrap VM image must stay under 400 MiB" >&2; exit 1; }
 }
 
 prepare
