@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs inside a privileged archlinux:base-devel container with the repo at /src.
 #   packages: build Intent OS pacman packages into out/repo
-#   iso:      build the offline installer ISO into out/iso
+#   iso:      build the installer ISO (netinstall) into out/iso
 #   all:      both
 # Env: ARCHIVE_DATE (YYYY/MM/DD), BUILD_ID, INTENT_OS_SIGNING_KEY (optional,
 # ASCII-armored secret key), HOST_UID (chown output for the host user).
@@ -11,7 +11,6 @@ SRC=/src
 OUT=$SRC/out
 WORK=/tmp/intent-os
 PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
-INSTALL_SET=(intent-os-base intent-os-session intent-os-update intent-os-hw-macbookair6)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
 : "${BUILD_ID:?set BUILD_ID}"
@@ -40,9 +39,6 @@ prepare() {
     mkdir -p "$OUT/keyring"
     gpg --batch --armor --export "$KEY_ID" > "$OUT/keyring/intent-os.gpg"
     echo "$KEY_ID:4:" > "$OUT/keyring/intent-os-trusted"
-    # The offline repo download verifies the signed intent-os repo.
-    pacman-key --add "$OUT/keyring/intent-os.gpg" >/dev/null
-    pacman-key --lsign-key "$KEY_ID" >/dev/null
   fi
 }
 
@@ -74,33 +70,6 @@ build_packages() {
 write_mirrorlist() {
   # shellcheck disable=SC2016 # pacman expands $repo and $arch
   printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$ARCHIVE_DATE" > "$1"
-}
-
-offline_repo() {
-  local repo=$1 conf=$WORK/pinned.conf
-  log "Downloading the pinned package set ($ARCHIVE_DATE)"
-  write_mirrorlist "$WORK/mirrorlist"
-  cat > "$conf" <<CONF
-[options]
-Architecture = x86_64
-SigLevel = Required DatabaseOptional
-ParallelDownloads = 8
-
-[core]
-Include = $WORK/mirrorlist
-
-[extra]
-Include = $WORK/mirrorlist
-
-[intent-os]
-SigLevel = Optional TrustAll
-Server = file://$OUT/repo
-CONF
-  rm -rf "$WORK/db" && mkdir -p "$WORK/db" "$repo"
-  pacman --config "$conf" --dbpath "$WORK/db" -Sy >/dev/null
-  pacman --config "$conf" --dbpath "$WORK/db" --cachedir "$repo" -Sw --noconfirm "${INSTALL_SET[@]}"
-  rm -f "$repo"/*.sig
-  repo-add -q "$repo/intent-os-offline.db.tar.gz" "$repo"/*.pkg.tar.zst
 }
 
 build_iso() {
@@ -137,20 +106,29 @@ build_iso() {
   local etc=$profile/airootfs/etc/intent-os
   mkdir -p "$etc"
   write_mirrorlist "$etc/mirrorlist"
-  cat > "$etc/pacman-offline.conf" <<'CONF'
-[options]
-Architecture = x86_64
-SigLevel = Never
-ParallelDownloads = 5
-
-[intent-os-offline]
-Server = file:///opt/intent-os/repo
-CONF
+  # The installer downloads from the pinned Arch snapshot and the signed
+  # intent-os repo; the ISO carries no packages of its own.
+  local intent_siglevel="Optional TrustAll"
   if [[ -d $OUT/keyring ]]; then
     cp "$OUT/keyring/intent-os.gpg" "$OUT/keyring/intent-os-trusted" "$etc/"
+    intent_siglevel="Required DatabaseRequired"
   fi
+  cat > "$etc/pacman-install.conf" <<CONF
+[options]
+Architecture = x86_64
+SigLevel = Required DatabaseOptional
+ParallelDownloads = 5
 
-  offline_repo "$profile/airootfs/opt/intent-os/repo"
+[intent-os]
+SigLevel = $intent_siglevel
+Server = https://github.com/intent-hq/intent-os/releases/download/repo-\$arch
+
+[core]
+Include = /etc/intent-os/mirrorlist
+
+[extra]
+Include = /etc/intent-os/mirrorlist
+CONF
 
   rm -rf "$OUT/iso"
   mkarchiso -v -w "$WORK/archiso" -o "$OUT/iso" "$profile"

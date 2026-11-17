@@ -28,8 +28,14 @@ fail() { result "FAIL: $1"; exit 1; }
 cp "$OVMF_VARS" "$OUT/vars.fd"
 rm -f "$OUT/disk.qcow2"
 qemu-img create -q -f qcow2 "$OUT/disk.qcow2" 32G
+# Serve the packages under test; the VM reaches the host at 10.0.2.2.
+REPO_DIR=$(cd "$(dirname "$ISO")/../repo" && pwd)
+python3 -m http.server 8080 --bind 127.0.0.1 --directory "$REPO_DIR" >"$OUT/repo-http.log" 2>&1 &
+HTTP_PID=$!
+trap 'kill "$HTTP_PID" 2>/dev/null || true' EXIT
+
 # Force the MacBook Air package so the Broadcom DKMS build is tested too.
-printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=UTC\nAFTER=poweroff\nHW=intent-os-hw-macbookair6\n' "$PIN" > "$OUT/auto.conf"
+printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=UTC\nAFTER=poweroff\nHW=intent-os-hw-macbookair6\nREPO=http://10.0.2.2:8080\n' "$PIN" > "$OUT/auto.conf"
 
 # shellcheck disable=SC2054
 common=(
@@ -79,7 +85,7 @@ qemu-system-x86_64 "${common[@]}" \
 QEMU_PID=$!
 watch_vm "$QEMU_PID" "$OUT/boot.log" "$MON" boot &
 WATCH_PID=$!
-trap 'kill "$QEMU_PID" "$WATCH_PID" 2>/dev/null || true' EXIT
+trap 'kill "$QEMU_PID" "$WATCH_PID" "$HTTP_PID" 2>/dev/null || true' EXIT
 
 # QEMU's PPM screendump works without PNG support; convert for the artifacts.
 screenshot() {
@@ -117,6 +123,7 @@ screenshot unlocked
 monitor "quit" || kill "$QEMU_PID" 2>/dev/null || true
 wait "$QEMU_PID" 2>/dev/null || true
 trap - EXIT
+kill "$HTTP_PID" 2>/dev/null || true
 for f in "$OUT"/*-latest.ppm; do
   [[ -f $f ]] && convert "$f" "${f%.ppm}.png" 2>/dev/null && rm -f "$f"
 done

@@ -31,7 +31,7 @@ bindsym Mod4+Control+q exec intent-os-lock
 bar {
   position top
   height 24
-  font pango:Noto Sans 10
+  font pango:Noto Sans, Symbols Nerd Font Mono 10
   status_command /usr/lib/intent-os/status-bar
   workspace_buttons no
   binding_mode_indicator no

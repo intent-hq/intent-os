@@ -5,6 +5,8 @@
 # forwarded so Intent can stop its intentd sidecar cleanly.
 set -u
 app="$HOME/.local/lib/intent-os/Intent.AppImage"
+# Intent's menu bar stays hidden (Alt shows it); shortcuts keep working.
+export INTENT_HIDE_MENU_BAR=1
 child="" stopping=0
 trap 'stopping=1; [[ -n $child ]] && kill -TERM "$child" 2>/dev/null' TERM INT
 

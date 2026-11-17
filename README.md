@@ -19,7 +19,8 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
 2. Write it to a USB stick (8 GB or larger), for example
    `sudo dd if=intent-os.iso of=/dev/sdX bs=4M conv=fsync status=progress`.
 3. Plug the stick into the Air. Hold **Option** while it starts, then pick **EFI Boot**.
-4. The installer starts by itself. Join Wi-Fi, pick the disk, set a PIN (4 to 12 digits),
+4. The installer starts by itself. Join Wi-Fi (the installer downloads Intent OS), pick
+   the disk, set a PIN (4 to 12 digits),
    and set the time zone. Type `erase` to confirm. **This erases macOS.**
 5. Remove the stick and restart. The Air boots to the PIN screen, then Intent.
 
@@ -38,7 +39,7 @@ console.
 | `packages/intent-os-update` | Staged idle-time updates and restart hints |
 | `packages/intent-os-hw-macbookair6` | MacBook Air 6,x: Broadcom Wi-Fi, wake fix, video decode |
 | `iso/` | Additions to the archiso `releng` profile, including the installer |
-| `build/in-container.sh` | Builds packages, the offline repo, and the ISO |
+| `build/in-container.sh` | Builds signed packages and the netinstall ISO |
 | `tests/smoke.sh` | QEMU test: install, boot, Intent window visible, unlock with the PIN |
 | `channel/archive-date` | Default Arch Linux Archive snapshot date |
 
