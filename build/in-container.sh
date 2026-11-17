@@ -40,6 +40,9 @@ prepare() {
     mkdir -p "$OUT/keyring"
     gpg --batch --armor --export "$KEY_ID" > "$OUT/keyring/intent-os.gpg"
     echo "$KEY_ID:4:" > "$OUT/keyring/intent-os-trusted"
+    # The offline repo download verifies the signed intent-os repo.
+    pacman-key --add "$OUT/keyring/intent-os.gpg" >/dev/null
+    pacman-key --lsign-key "$KEY_ID" >/dev/null
   fi
 }
 
