@@ -1,5 +1,6 @@
 #!/bin/bash
-# swaybar status (i3bar protocol): network, battery, clock, device controls.
+# swaybar status (i3bar protocol): network (click for the Wi-Fi picker),
+# battery, clock, device controls.
 # A dot on Restart means an installed system update needs a reboot.
 # Intent shows its own update prompt.
 set -u
@@ -15,6 +16,7 @@ handle_clicks() {
     [[ $line == "[" || -z $line ]] && continue
     name=$(jq -r '.name // empty' <<<"$line" 2>/dev/null) || continue
     case $name in
+      network) intent-os-wifi >/dev/null 2>&1 & ;;
       restart-intent) systemctl --user restart intent.service & ;;
       reboot) confirm "Restart this device?" "Restart" "systemctl reboot" ;;
       poweroff) confirm "Shut down this device?" "Shut down" "systemctl poweroff" ;;

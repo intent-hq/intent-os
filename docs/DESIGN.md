@@ -52,7 +52,10 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    using its own terminals. This is a deliberate test of Intent as the whole computer;
    gaps found here become small Intent changes, not more OS apps. Emergency access only:
    Ctrl+Alt+F2 opens a text console (user `intent`, the PIN).
-6. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
+6. **Wi-Fi.** Clicking the network name opens a dropdown (`fuzzel`) under it: nearby
+   networks with signal, a password prompt only for new secured networks, and Turn
+   Wi-Fi off/on. Failures show in a swaynag bar.
+7. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
    Ctrl+Cmd+Q locks. The power key suspends (it sits next to Delete on the Air).
 
 ## 5. Supervision

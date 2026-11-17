@@ -24,7 +24,8 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
 5. Remove the stick and restart. The Air boots to the PIN screen, then Intent.
 
 The PIN unlocks the device and is the password for `sudo` in Intent's terminal.
-Install coding agents from Intent. For emergencies only, Ctrl+Alt+F2 opens a text
+Click the network name in the top bar to change Wi-Fi. Install coding agents from
+Intent. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
 ## Layout
