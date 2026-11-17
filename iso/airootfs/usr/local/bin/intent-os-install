@@ -144,7 +144,7 @@ partition() {
   wipefs -af "$DISK"
   sgdisk --zap-all "$DISK"
   sgdisk -n1:0:+1G -t1:ef00 -c1:EFI -n2:0:0 -t2:8300 -c2:intent-os "$DISK"
-  partprobe "$DISK" || true
+  partx -u "$DISK" 2>/dev/null || true
   udevadm settle
   ESP=$(part 1) ROOT=$(part 2)
   mkfs.fat -F32 -n EFI "$ESP"
@@ -173,6 +173,10 @@ hardware_packages() {
 }
 
 trust_intent_os_key() {
+  if [[ ! -s /etc/pacman.d/gnupg/pubring.gpg ]]; then
+    pacman-key --init >/dev/null
+    pacman-key --populate archlinux >/dev/null
+  fi
   [[ -f /etc/intent-os/intent-os-trusted ]] || return 0
   local fpr
   fpr=$(cut -d: -f1 /etc/intent-os/intent-os-trusted)

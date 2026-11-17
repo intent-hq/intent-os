@@ -11,12 +11,14 @@ Follow the Omarchy pattern (Arch, btrfs + snapper, ISO installer), but ship only
 base layer.
 
 1. **pacman packages are the product.** Everything is in five packages (see README).
-2. **The ISO is a small netinstall image.** It carries only the live installer system
-   (with laptop firmware and the MacBook Air Wi-Fi driver). The installer downloads
+2. **The ISO is a small netinstall image.** It carries only a minimal live system built
+   from archiso's `baseline` profile: kernel, disk tools, NetworkManager, the installer,
+   Wi-Fi firmware, and the MacBook Air `wl` driver prebuilt for the live kernel (no
+   compiler on the stick). The build fails if the ISO passes 600 MiB. The installer downloads
    packages from the Arch snapshot the image was tested with and the signed `intent-os`
    repo, so it installs the set that passed the boot test. It needs a network.
-   Firmware is limited to laptop and desktop vendors (no Qualcomm, Mellanox, NVIDIA,
-   Marvell); the build fails if the ISO passes 1900 MiB.
+   Installed systems get laptop and desktop firmware (no Qualcomm, Mellanox, NVIDIA,
+   Marvell).
 3. **OS updates are `pacman -Syu`** against the pinned snapshot, plus the signed
    `intent-os` repo for Intent OS packages. **Intent updates itself** in the app.
 

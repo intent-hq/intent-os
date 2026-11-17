@@ -22,7 +22,7 @@ prepare() {
   log "Preparing build container"
   pacman-key --init >/dev/null
   pacman-key --populate archlinux >/dev/null
-  pacman -Syu --noconfirm --needed archiso git >/dev/null
+  pacman -Syu --noconfirm --needed archiso git grub erofs-utils mtools dosfstools >/dev/null
   id builder >/dev/null 2>&1 || useradd -m builder
   mkdir -p "$OUT" "$WORK"
   SIGN_ARGS=() REPO_SIGN_ARGS=() KEY_ID=""
@@ -72,27 +72,70 @@ write_mirrorlist() {
   printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$ARCHIVE_DATE" > "$1"
 }
 
+# intent-os-live: the MacBook Air wl driver built once for the live kernel,
+# plus Intel iwlwifi firmware only, so the USB stick needs no compiler,
+# headers or full firmware packages.
+build_live_package() {
+  log "Building the live Wi-Fi package"
+  pacman -S --noconfirm --needed linux linux-headers broadcom-wl-dkms linux-firmware-intel >/dev/null
+  local linux_ver kdir wl dir=$WORK/live-pkg
+  linux_ver=$(pacman -Q linux | awk '{print $2}')
+  kdir=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/updates/dkms' ';' -print | head -n1)
+  wl=$(find "$kdir/updates/dkms" -name 'wl.ko*' | head -n1)
+  [[ -n $wl ]] || { echo "error: dkms did not build wl for $kdir" >&2; exit 1; }
+  rm -rf "$dir" "$WORK/live-repo"
+  mkdir -p "$dir/root" "$WORK/live-repo"
+  install -Dm644 "$wl" "$dir/root${wl}"
+  local conf
+  for conf in /usr/lib/modprobe.d/broadcom-wl*.conf; do
+    install -Dm644 "$conf" "$dir/root$conf"
+  done
+  (cd /usr/lib/firmware && find . \( -name 'iwlwifi-*' -o -path './intel/iwlwifi*' \) -print0 |
+    tar --null -cf - -T - | tar -xf - -C "$dir/root" --one-top-level=usr/lib/firmware)
+  cat > "$dir/PKGBUILD" <<PKG
+pkgname=intent-os-live
+pkgver=1
+pkgrel=1
+pkgdesc="Intent OS live installer Wi-Fi: prebuilt wl driver and iwlwifi firmware"
+arch=(x86_64)
+license=(custom)
+depends=("linux=$linux_ver")
+options=(!strip !debug)
+package() { cp -a "\$startdir/root/." "\$pkgdir/"; }
+PKG
+  chown -R builder "$dir" "$WORK/live-repo"
+  (cd "$dir" && sudo -u builder env PKGDEST="$WORK/live-repo" makepkg -fd --noconfirm >/dev/null)
+  repo-add -q "$WORK/live-repo/intent-os-live.db.tar.gz" "$WORK"/live-repo/*.pkg.tar.zst
+}
+
 build_iso() {
   log "Building installer ISO"
   local profile=$WORK/profile
   rm -rf "$profile" "$WORK/archiso"
-  cp -r /usr/share/archiso/configs/releng "$profile"
+  cp -r /usr/share/archiso/configs/baseline "$profile"
+  build_live_package
 
-  # Same reduced firmware set as intent-os-base, to keep the ISO under 2 GiB.
-  sed -i '/^linux-firmware/d' "$profile/packages.x86_64"
-  grep -v '^#' "$SRC/iso/packages.x86_64" >> "$profile/packages.x86_64"
+  # Our own package list and services; drop baseline's cloud and VM tooling.
+  cp "$SRC/iso/packages.x86_64" "$profile/packages.x86_64"
+  rm -rf "$profile/airootfs/etc/systemd/system/"*.wants \
+    "$profile/airootfs/etc/systemd/system/systemd-networkd-wait-online.service.d" \
+    "$profile/airootfs/etc/systemd/network" "$profile/airootfs/etc/systemd/networkd.conf.d" \
+    "$profile/airootfs/etc/systemd/resolved.conf.d" "$profile/airootfs/etc/ssh"
   cp -a "$SRC/iso/airootfs/." "$profile/airootfs/"
-
-  # NetworkManager replaces iwd and systemd-networkd in the live system.
-  find "$profile/airootfs/etc/systemd/system" \
-    \( -name 'iwd.service' -o -name 'systemd-networkd*' \) ! -type d -delete
+  mkdir -p "$profile/airootfs/etc/systemd/system/multi-user.target.wants"
   ln -sf /usr/lib/systemd/system/NetworkManager.service \
     "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+  cat >> "$profile/pacman.conf" <<CONF
+
+[intent-os-live]
+SigLevel = Optional TrustAll
+Server = file://$WORK/live-repo
+CONF
 
   # Serial console for the QEMU boot test. Harmless on hardware.
   find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
     \( -name '*.conf' -o -name '*.cfg' \) \
-    -exec sed -i 's/archisosearchuuid=%ARCHISO_UUID%/& console=tty0 console=ttyS0,115200/' {} + 2>/dev/null
+    -exec sed -i 's/archisosearchuuid=%ARCHISO_UUID%/& console=tty0 console=ttyS0,115200/' {} + 2>/dev/null || true
 
   sed -i -E \
     -e 's/^iso_name=.*/iso_name="intent-os"/' \
@@ -133,13 +176,13 @@ CONF
   rm -rf "$OUT/iso"
   mkarchiso -v -w "$WORK/archiso" -o "$OUT/iso" "$profile"
   (cd "$OUT/iso" && sha256sum ./*.iso > SHA256SUMS)
-  # GitHub release assets must be under 2 GiB; fail here, not at publish.
-  local iso size limit=$((1900 * 1024 * 1024))
+  # The netinstall image must stay small; fail here, not at publish.
+  local iso size limit=$((600 * 1024 * 1024))
   iso=$(ls "$OUT"/iso/*.iso)
   size=$(stat -c %s "$iso")
-  log "ISO size: $((size / 1024 / 1024)) MiB (limit 1900 MiB)"
+  log "ISO size: $((size / 1024 / 1024)) MiB (limit 600 MiB)"
   if (( size > limit )); then
-    echo "error: ISO is $((size / 1024 / 1024)) MiB; GitHub release assets must stay under 2 GiB" >&2
+    echo "error: ISO is $((size / 1024 / 1024)) MiB; the netinstall image must stay under 600 MiB" >&2
     exit 1
   fi
 }
