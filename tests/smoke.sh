@@ -49,7 +49,7 @@ watch_vm() {
     sleep 60
     n=$((n + 1))
     echo "-- $name +${n}m: $(tail -n 2 "$log" 2>/dev/null | tr -d '\r' | tr '\n' ' ' | cut -c1-200)"
-    echo "screendump -f png $OUT/$name-latest.png" | socat - "UNIX-CONNECT:$mon" >/dev/null 2>&1 || true
+    { echo "screendump -f png $OUT/$name-latest.png"; sleep 2; } | socat - "UNIX-CONNECT:$mon" >/dev/null 2>&1 || true
   done
 }
 
@@ -81,7 +81,8 @@ watch_vm "$QEMU_PID" "$OUT/boot.log" "$MON" boot &
 WATCH_PID=$!
 trap 'kill "$QEMU_PID" "$WATCH_PID" 2>/dev/null || true' EXIT
 
-monitor() { echo "$1" | socat - "UNIX-CONNECT:$MON" >/dev/null; }
+# Keep the connection open briefly: QEMU drops a command whose client hangs up at once.
+monitor() { { echo "$1"; sleep 2; } | socat - "UNIX-CONNECT:$MON" >/dev/null; }
 
 wait_for() {
   local pattern=$1 seconds=$2
@@ -105,7 +106,9 @@ done
 (( booted )) || { wait_for INTENT_OS_BOOT_OK 240 && booted=1; }
 sleep 15
 monitor "screendump -f png $OUT/unlocked.png"
-monitor "system_powerdown"
+# Quit QEMU directly: Intent OS maps the power button to suspend, so an ACPI
+# power-down would leave the VM asleep and the test waiting forever.
+monitor "quit" || kill "$QEMU_PID" 2>/dev/null || true
 wait "$QEMU_PID" 2>/dev/null || true
 trap - EXIT
 
