@@ -14,7 +14,7 @@ base layer.
 2. **The ISO is a small netinstall image.** It carries only a minimal live system built
    from archiso's `baseline` profile: kernel, disk tools, NetworkManager, the installer,
    Wi-Fi firmware, and the MacBook Air `wl` driver prebuilt for the live kernel (no
-   compiler on the stick). The build fails if the ISO passes 600 MiB. The installer downloads
+   compiler on the stick). The build fails if the ISO passes 560 MiB (520 MiB today). The installer downloads
    packages from the Arch snapshot the image was tested with and the signed `intent-os`
    repo, so it installs the set that passed the boot test. It needs a network.
    Installed systems get laptop and desktop firmware (no Qualcomm, Mellanox, NVIDIA,

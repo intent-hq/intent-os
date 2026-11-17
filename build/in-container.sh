@@ -200,12 +200,12 @@ CONF
   log "Largest parts of the live system"
   du -x -m --max-depth=5 "$WORK/archiso/x86_64/airootfs/usr" 2>/dev/null | sort -n | tail -n 25
   # The netinstall image must stay small; fail here, not at publish.
-  local iso size limit=$((600 * 1024 * 1024))
+  local iso size limit=$((560 * 1024 * 1024))
   iso=$(ls "$OUT"/iso/*.iso)
   size=$(stat -c %s "$iso")
-  log "ISO size: $((size / 1024 / 1024)) MiB (limit 600 MiB)"
+  log "ISO size: $((size / 1024 / 1024)) MiB (limit 560 MiB)"
   if (( size > limit )); then
-    echo "error: ISO is $((size / 1024 / 1024)) MiB; the netinstall image must stay under 600 MiB" >&2
+    echo "error: ISO is $((size / 1024 / 1024)) MiB; the netinstall image must stay under 560 MiB" >&2
     exit 1
   fi
 }
