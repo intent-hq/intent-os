@@ -111,7 +111,7 @@ build_iso() {
 
   # NetworkManager replaces iwd and systemd-networkd in the live system.
   find "$profile/airootfs/etc/systemd/system" \
-    \( -name 'iwd.service' -o -name 'systemd-networkd*' \) -delete
+    \( -name 'iwd.service' -o -name 'systemd-networkd*' \) ! -type d -delete
   ln -sf /usr/lib/systemd/system/NetworkManager.service \
     "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
 
