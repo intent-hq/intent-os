@@ -4,11 +4,6 @@ vars="XDG_SESSION_ID WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TY
 systemctl --user import-environment $vars
 # shellcheck disable=SC2086
 dbus-update-activation-environment --systemd $vars
-# Apple keyboards (USB vendor 1452): Cmd also acts as Ctrl, so Mac shortcuts
-# such as Cmd+C/X/V work in Intent. Ctrl keeps working as Ctrl.
-swaymsg -t get_inputs -r 2>/dev/null |
-  jq -r '.[] | select(.type == "keyboard" and (.identifier | startswith("1452:"))) | .identifier' |
-  while read -r id; do swaymsg input "$id" xkb_options altwin:ctrl_win >/dev/null; done
 # Lock first. Intent loads behind the lock while the owner enters the PIN.
 intent-os-lock
 # shellcheck disable=SC2086

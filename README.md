@@ -26,7 +26,7 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
 
 The PIN unlocks the device. Intent and its agents can run `sudo` without a password.
 Move the pointer to the top edge to show the bar (Wi-Fi, battery, clock, restart, shut
-down); click the network name to change Wi-Fi. On a Mac keyboard, Cmd+C/X/V copy, cut and paste. Install coding agents from
+down); click the network name to change Wi-Fi. Cmd+C/X/V copy, cut and paste, also in the terminal. Install coding agents from
 Intent; their sign-in pages open in a small Intent window. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
