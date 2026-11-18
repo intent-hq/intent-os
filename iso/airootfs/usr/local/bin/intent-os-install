@@ -28,6 +28,12 @@ ARCH=$(uname -m)
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
+# A failed unattended run (the CI boot test) powers off at once instead of waiting.
+on_exit() {
+  local rc=$?
+  if (( rc != 0 && AUTO && !IMAGE )); then echo "INTENT_OS_INSTALL_FAILED"; sync; systemctl poweroff; fi
+}
+trap on_exit EXIT
 
 load_auto_config() {
   local source=$FWCFG
@@ -244,8 +250,16 @@ install_packages() {
     if [[ $ARCH == aarch64 ]]; then packages+=(linux-aarch64 archlinuxarm-keyring); else packages+=(linux); fi
     hw=""
   fi
-  # shellcheck disable=SC2086
-  pacstrap -C "$conf" -G -M "$MNT" "${packages[@]}" $hw
+  # Mirrors stall now and then. Downloads stay in the new root's package
+  # cache, so each retry fetches only what is still missing.
+  local try
+  for try in 1 2 3; do
+    # shellcheck disable=SC2086
+    pacstrap -C "$conf" -G -M "$MNT" "${packages[@]}" $hw && break
+    (( try == 3 )) && die "Could not download Intent OS. Check the network, then run the installer again."
+    echo "Download failed. Trying again in 30 seconds ($try of 3)."
+    sleep 30
+  done
   if (( IMAGE )); then
     # Built in a container: keep every driver, not just the build host's.
     mkdir -p "$MNT/etc/mkinitcpio.conf.d"
