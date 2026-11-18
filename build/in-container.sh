@@ -15,7 +15,12 @@ ARCH=$(uname -m)
 # archiso is not packaged for Arch Linux ARM; aarch64 runs it from this tag.
 ARCHISO_REF=v92
 PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-bootstrap)
-[[ $ARCH == x86_64 ]] && PACKAGES+=(intent-os-hw-macbookair6)
+[[ $ARCH == x86_64 ]] && PACKAGES+=(intent-os-hw-macbookair6 intent-os-hw-t2)
+# T2 Macs (2018-2020): t2linux packages, copied into the signed intent-os repo
+# so devices get a tested, signed set. The arch-mact2 repo itself is unsigned;
+# each file is checked against the sha256 in its database.
+T2_REPO=https://mirror.funami.tech/arch-mact2/os/x86_64
+T2_PACKAGES=(linux-t2 linux-t2-headers apple-bcm-firmware-fetcher apple-t2-audio-config t2fanrd tiny-dfr)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
 : "${BUILD_ID:?set BUILD_ID}"
@@ -58,6 +63,26 @@ prepare() {
   fi
 }
 
+fetch_t2_packages() {
+  log "Fetching T2 Mac packages"
+  local db=$WORK/t2 p desc file sum
+  rm -rf "$db" && mkdir -p "$db"
+  curl -fsSL --retry 3 -o "$db/arch-mact2.db" "$T2_REPO/arch-mact2.db"
+  tar -xf "$db/arch-mact2.db" -C "$db"
+  for p in "${T2_PACKAGES[@]}"; do
+    desc=$(for d in "$db"/*/desc; do
+      if [[ $(sed -n '/^%NAME%$/{n;p;q}' "$d") == "$p" ]]; then echo "$d"; fi; done | head -n1)
+    [[ -n $desc ]] || { echo "error: $p is not in arch-mact2" >&2; exit 1; }
+    file=$(sed -n '/^%FILENAME%$/{n;p;q}' "$desc")
+    sum=$(sed -n '/^%SHA256SUM%$/{n;p;q}' "$desc")
+    curl -fsSL --retry 3 -o "$OUT/repo/$file" "$T2_REPO/$file"
+    echo "$sum  $OUT/repo/$file" | sha256sum -c --quiet -
+    if [[ -n $KEY_ID ]]; then
+      gpg --batch --yes --detach-sign --no-armor -u "$KEY_ID" -o "$OUT/repo/$file.sig" "$OUT/repo/$file"
+    fi
+  done
+}
+
 build_packages() {
   log "Building packages"
   rm -rf "$OUT/repo" "$WORK/pkgbuild"
@@ -76,6 +101,7 @@ build_packages() {
       sudo -u builder env PKGDEST="$OUT/repo" SRCDEST="$WORK/src" PKGEXT=.pkg.tar.zst \
         makepkg -fd --noconfirm "${SIGN_ARGS[@]}")
   done
+  if [[ $ARCH == x86_64 ]]; then fetch_t2_packages; fi
   repo-add -q "${REPO_SIGN_ARGS[@]}" "$OUT/repo/intent-os.db.tar.gz" "$OUT"/repo/*.pkg.tar.zst
   # Release assets cannot be symlinks.
   local f
@@ -98,10 +124,14 @@ write_mirrorlist() {
 # headers or full firmware packages.
 build_live_package() {
   log "Building the live Wi-Fi package"
-  pacman -S --noconfirm --needed linux linux-headers broadcom-wl-dkms \
+  # The live system runs the T2 kernel: it is Arch's kernel plus T2 Mac drivers,
+  # so the same stick also has a keyboard and Wi-Fi on T2 Macs.
+  pacman -U --noconfirm --needed "$OUT"/repo/linux-t2-[0-9]*.pkg.tar.zst \
+    "$OUT"/repo/linux-t2-headers-[0-9]*.pkg.tar.zst >/dev/null
+  pacman -S --noconfirm --needed broadcom-wl-dkms \
     linux-firmware-intel linux-firmware-atheros linux-firmware-mediatek >/dev/null
   local linux_ver kdir wl dir=$WORK/live-pkg
-  linux_ver=$(pacman -Q linux | awk '{print $2}')
+  linux_ver=$(pacman -Q linux-t2 | awk '{print $2}')
   kdir=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/updates/dkms' ';' -print | head -n1)
   wl=$(find "$kdir/updates/dkms" -name 'wl.ko*' | head -n1)
   [[ -n $wl ]] || { echo "error: dkms did not build wl for $kdir" >&2; exit 1; }
@@ -128,7 +158,7 @@ pkgrel=1
 pkgdesc="Intent OS live installer Wi-Fi: prebuilt wl driver and Wi-Fi firmware"
 arch=(x86_64)
 license=(custom)
-depends=("linux=$linux_ver")
+depends=("linux-t2=$linux_ver")
 options=(!strip !debug)
 package() { cp -a "\$startdir/root/." "\$pkgdir/"; }
 PKG
@@ -189,21 +219,27 @@ build_iso() {
     "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
   # The installer needs no docs, translations or headers on the stick.
   sed -i '/^\[options\]/a NoExtract = usr/share/locale/* usr/share/man/* usr/share/doc/* usr/share/info/* usr/share/gtk-doc/* usr/share/gir-1.0/* usr/include/* usr/share/i18n/*\nNoExtract = !usr/share/locale/locale.alias' "$profile/pacman.conf"
-  if [[ $ARCH == aarch64 ]]; then
-    # intent-os-bootstrap exposes /boot/Image as vmlinuz-linux for mkarchiso.
-    cat >> "$profile/pacman.conf" <<CONF
+  # aarch64: intent-os-bootstrap exposes /boot/Image as vmlinuz-linux for
+  # mkarchiso. x86_64: the T2 kernel and firmware fetcher come from intent-os.
+  cat >> "$profile/pacman.conf" <<CONF
 
 [intent-os]
 SigLevel = Optional TrustAll
 Server = file://$OUT/repo
 CONF
-  else
+  if [[ $ARCH == x86_64 ]]; then
     cat >> "$profile/pacman.conf" <<CONF
 
 [intent-os-live]
 SigLevel = Optional TrustAll
 Server = file://$WORK/live-repo
 CONF
+    # Boot the live system with the T2 kernel; T2 Macs need IOMMU passthrough.
+    find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
+      \( -name '*.conf' -o -name '*.cfg' \) -exec sed -i \
+      -e 's/vmlinuz-linux\b/vmlinuz-linux-t2/g' -e 's/initramfs-linux\.img/initramfs-linux-t2.img/g' \
+      -e 's/archisosearchuuid=%ARCHISO_UUID%/& intel_iommu=on iommu=pt pm_async=off/' {} +
+    grep -rq vmlinuz-linux-t2 "$profile/grub" || { echo "error: live boot entries still use vmlinuz-linux" >&2; exit 1; }
   fi
 
   # Serial console for the QEMU boot test. tty0 comes last so it is the main

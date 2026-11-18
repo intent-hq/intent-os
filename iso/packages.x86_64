@@ -1,7 +1,9 @@
 # Complete package list for the live installer (built from archiso's
 # baseline profile). Keep it to what intent-os-install uses.
 base
-linux
+linux-t2
+# T2 Macs: copies Wi-Fi firmware from the macOS volume before the disk is erased.
+apple-bcm-firmware-fetcher
 mkinitcpio
 mkinitcpio-archiso
 syslinux

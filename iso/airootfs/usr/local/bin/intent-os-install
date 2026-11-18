@@ -208,9 +208,40 @@ partition() {
   mount -o umask=0077 "$ESP" "$MNT/efi"
 }
 
+# Apple T2 bridge (PCI 106b:1801): Intel Macs from 2018 to 2020.
+is_t2() {
+  local d
+  for d in /sys/bus/pci/devices/*; do
+    [[ $(cat "$d/vendor" 2>/dev/null) == 0x106b && $(cat "$d/device" 2>/dev/null) == 0x1801 ]] && return 0
+  done
+  return 1
+}
+
+# T2 Wi-Fi firmware is Apple's and ships only with macOS. Copy it from the
+# macOS volume now, before the disk is erased; it also enables Wi-Fi here.
+T2_FIRMWARE_STAMP=/run/intent-os-t2-firmware
+fetch_t2_firmware() {
+  is_t2 || return 0
+  say "T2 Mac: copying the Wi-Fi firmware from macOS"
+  touch "$T2_FIRMWARE_STAMP"
+  if ! apple-bcm-firmware-fetcher; then
+    echo "Could not copy the Wi-Fi firmware (is macOS still on this disk?)."
+    echo "Wi-Fi will not work. Use USB Ethernet or a phone (USB tethering) to install."
+  fi
+}
+
+copy_t2_firmware() {
+  [[ -e $T2_FIRMWARE_STAMP ]] || return 0
+  local f
+  while read -r f; do
+    install -Dm644 "$f" "$MNT$f"
+  done < <(find /usr/lib/firmware/brcm -type f -newer "$T2_FIRMWARE_STAMP")
+}
+
 hardware_packages() {
   local product
   [[ -n $HW ]] && { echo "$HW"; return; }
+  is_t2 && { echo intent-os-hw-t2; return; }
   product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
   case $product in
     MacBookAir6,1|MacBookAir6,2) echo intent-os-hw-macbookair6 ;;
@@ -319,6 +350,11 @@ configure_system() {
       cmdline+=" console=ttyS0,115200 console=tty0"
     fi
   fi
+  if [[ $(hardware_packages) == intent-os-hw-t2 ]]; then
+    cmdline+=" intel_iommu=on iommu=pt pm_async=off"
+    # Boot the T2 kernel by default; Arch's kernel stays as a fallback.
+    echo 'GRUB_TOP_LEVEL="/boot/vmlinuz-linux-t2"' >> "$MNT/etc/default/grub"
+  fi
   echo "$HOSTNAME_DEFAULT" > "$MNT/etc/hostname"
   echo "KEYMAP=us" > "$MNT/etc/vconsole.conf"
   echo "LANG=en_US.UTF-8" > "$MNT/etc/locale.conf"
@@ -337,6 +373,7 @@ configure_system() {
 
   local hw_units="" units="greetd fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer"
   [[ $(hardware_packages) == intent-os-hw-macbookair6 ]] && hw_units="intent-os-macbookair6-wakeup.service"
+  [[ $(hardware_packages) == intent-os-hw-t2 ]] && hw_units="t2fanrd.service tiny-dfr.service"
   # Bootstrap images enable the rest on first boot, once it is installed.
   (( BOOTSTRAP )) && units="" hw_units=""
 
@@ -432,6 +469,7 @@ main() {
   clear 2>/dev/null || true
   say "Intent OS installer"
   (( IMAGE )) || check_uefi
+  fetch_t2_firmware
   if (( ! AUTO )); then
     setup_network
     pick_disk
@@ -444,6 +482,7 @@ main() {
   online || die "no network connection; the installer downloads Intent OS"
   partition
   install_packages
+  copy_t2_firmware
   configure_system
   (( BOOTSTRAP )) || configure_snapper
   copy_network

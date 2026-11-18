@@ -128,6 +128,23 @@ stateDiagram-v2
 | Camera | Not supported (needs out-of-tree `facetimehd`). |
 | Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
+## 7a. Intel Macs with the T2 chip (2018–2020)
+
+1. **Kernel.** The keyboard, trackpad, audio and Touch Bar sit behind the T2 and need the
+   t2linux kernel (`linux-t2`, driver `t2bce`). CI copies `linux-t2` and the T2 helper
+   packages from the unsigned `arch-mact2` repo into the signed `intent-os` repo, after
+   checking each file against the sha256 in that repo's database.
+2. **Installer.** The live ISO boots `linux-t2` on every machine (it is Arch's kernel plus
+   T2 drivers), with `intel_iommu=on iommu=pt pm_async=off`.
+3. **Wi-Fi firmware** is Apple's and only ships with macOS. On a T2 Mac the installer runs
+   `apple-bcm-firmware-fetcher` before it erases the disk, then copies the files to the
+   installed system.
+4. **Installed system.** `intent-os-hw-t2` (selected by the T2 PCI ID `106b:1801`) adds
+   `linux-t2` as the default GRUB entry (Arch's kernel stays as a fallback), fan control
+   (`t2fanrd`) and the Touch Bar (`tiny-dfr`).
+5. **Tests:** by hand on a T2 Mac. The QEMU boot test covers the T2 kernel on generic
+   hardware through the live ISO.
+
 ## 8. aarch64 (UTM on Apple silicon, UEFI ARM machines)
 
 1. **Same shape as x86_64:** a netinstall ISO with the same installer. One ISO per
