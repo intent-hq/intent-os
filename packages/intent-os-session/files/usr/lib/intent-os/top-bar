@@ -26,6 +26,7 @@ I_OFFLINE = "\U000f05aa"
 I_BATTERY = ["\U000f007a", "\U000f007b", "\U000f007c", "\U000f007d", "\U000f007e",
              "\U000f007f", "\U000f0080", "\U000f0081", "\U000f0082", "\U000f0079"]
 I_CHARGING = "\U000f0084"
+I_BATTERY_ALERT = "\U000f0083"  # worn battery: replace it
 I_RESTART_INTENT = "\U000f0450"
 I_REBOOT = "\U000f0709"
 I_POWER = "\U000f0425"
@@ -84,19 +85,48 @@ def network_text():
     return I_OFFLINE
 
 
+def read_int(path):
+    try:
+        with open(path) as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def battery_percent(path):
+    """Charge as a percentage. A worn battery's own "full" can be tiny, so
+    the kernel's capacity can pass 100% (or swing wildly); when the battery
+    holds under half its design charge, measure against the design instead.
+    Returns (percent, worn)."""
+    for kind in ("energy", "charge"):
+        now = read_int(f"{path}/{kind}_now")
+        full = read_int(f"{path}/{kind}_full")
+        design = read_int(f"{path}/{kind}_full_design")
+        if now is not None and full and design:
+            worn = full < design // 2
+            pct = round(100 * now / (design if worn else full))
+            return max(0, min(100, pct)), worn
+    cap = read_int(f"{path}/capacity")
+    return (None, False) if cap is None else (max(0, min(100, cap)), False)
+
+
 def battery_text():
     base = "/sys/class/power_supply"
     for ps in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        path = f"{base}/{ps}"
         try:
-            with open(f"{base}/{ps}/type") as f:
+            with open(f"{path}/type") as f:
                 if f.read().strip() != "Battery":
                     continue
-            with open(f"{base}/{ps}/capacity") as f:
-                cap = int(f.read().strip())
-            with open(f"{base}/{ps}/status") as f:
+            with open(f"{path}/status") as f:
                 status = f.read().strip()
-        except (OSError, ValueError):
+        except OSError:
             continue
+        cap, worn = battery_percent(path)
+        if cap is None:
+            continue
+        if worn:
+            return f"{I_BATTERY_ALERT} {cap}%"
         if status == "Charging":
             return f"{I_CHARGING} {cap}%"
         return f"{I_BATTERY[max(0, min(9, cap // 10 - 1))]} {cap}%"
