@@ -1,5 +1,5 @@
 # Intent OS kiosk session. No launcher, no app shortcuts.
-font pango:Noto Sans 10
+font pango:Inter 10
 default_border none
 default_floating_border pixel 1
 hide_edge_borders both
@@ -9,7 +9,7 @@ xwayland enable
 output * bg #0b0b0c solid_color
 
 input type:touchpad {
-  tap enabled
+  tap disabled
   natural_scroll enabled
   dwt enabled
   click_method clickfinger
@@ -31,7 +31,7 @@ bindsym Mod4+Control+q exec intent-os-lock
 bar {
   position top
   height 24
-  font pango:Noto Sans, Symbols Nerd Font Mono 10
+  font pango:Inter, Symbols Nerd Font Mono 10
   status_command /usr/lib/intent-os/status-bar
   workspace_buttons no
   binding_mode_indicator no

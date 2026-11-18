@@ -29,6 +29,9 @@ Click the network name in the top bar to change Wi-Fi. Install coding agents fro
 Intent; their sign-in pages open in a small Intent window. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
+The interface uses Inter. Touchpad clicks require a physical press; tap-to-click
+is disabled by default.
+
 ## Run in a VM on an Apple silicon Mac (UTM)
 
 Each release has two netinstall ISOs: `*-x86_64.iso` and `*-aarch64.iso`. On an Apple
