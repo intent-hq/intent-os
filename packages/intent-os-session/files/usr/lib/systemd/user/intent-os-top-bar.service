@@ -1,0 +1,8 @@
+[Unit]
+Description=Intent OS top bar
+PartOf=intent-os-session.target
+
+[Service]
+ExecStart=/usr/lib/intent-os/top-bar
+Restart=always
+RestartSec=2

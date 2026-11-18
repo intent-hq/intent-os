@@ -41,18 +41,18 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    session-start: swaylock first, then intent-os-session.target
        intent.service      Intent, supervised
        intent-os-idle      lock after 5 min idle and before sleep
-   swaybar (top, 24 px)    network, battery, clock, then icons: restart Intent, restart, power
+       intent-os-top-bar   hover the top edge: network, battery, clock, restart Intent, restart, power
 ```
 
-1. **sway, not cage.** The PIN lock needs `ext-session-lock`, which cage lacks. sway also
-   gives a built-in bar, so device controls need no extra process.
+1. **sway, not cage.** The PIN lock needs `ext-session-lock`, which cage lacks.
 2. **Lock first.** `swaylock -f` returns only once the screen is locked, then Intent
    starts behind the lock. It is never visible before the PIN.
 3. **PIN = the owner's Linux password.** The lock screen is hyprlock (clock and an "Enter PIN" field; swaylock is the fallback). After 10 wrong PINs it waits a minute (faillock). Both check it through PAM. Root is locked.
    **Full admin without prompts:** Intent is the whole computer, so the owner runs
    `sudo` without a password and polkit allows `wheel` every action (there is no
    password dialog to answer). The PIN guards the screen, not admin rights.
-4. **Controls** are in the top-right of the bar. Restart and Shut down ask once in a
+4. **Controls** take no space: move the pointer to the top edge and a bar opens over
+   Intent (GTK layer-shell); it closes when the pointer leaves. Controls are on its right. Restart and Shut down ask once in a
    swaynag bar (no password). The polkit rule also covers user services.
 5. **No terminal app.** Intent is the only way to install and sign in to coding agents,
    using its own terminals. This is a deliberate test of Intent as the whole computer;
@@ -67,7 +67,8 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    (`claude auth login`) finishes there, and the window closes when the page returns
    to the CLI. Escape closes it.
 8. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
-   Ctrl+Cmd+Q locks. The power key suspends (it sits next to Delete on the Air).
+   Cmd also acts as Ctrl (`altwin:ctrl_win`), so Cmd+C/X/V and other Mac shortcuts work
+   in Intent. Cmd+Q locks instead of quitting Intent. The power key suspends (it sits next to Delete on the Air).
 
 ## 5. Supervision
 

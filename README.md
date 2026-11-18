@@ -25,7 +25,8 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
 5. Remove the stick and restart. The Air boots to the PIN screen, then Intent.
 
 The PIN unlocks the device. Intent and its agents can run `sudo` without a password.
-Click the network name in the top bar to change Wi-Fi. Install coding agents from
+Move the pointer to the top edge to show the bar (Wi-Fi, battery, clock, restart, shut
+down); click the network name to change Wi-Fi. Cmd+C/X/V copy, cut and paste. Install coding agents from
 Intent; their sign-in pages open in a small Intent window. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 

@@ -14,9 +14,12 @@ input type:touchpad {
   dwt enabled
   click_method clickfinger
 }
+# Cmd (Super) also acts as Ctrl, so Mac shortcuts work in Intent on Linux:
+# Cmd+C/X/V copy, cut and paste. Ctrl keeps working as Ctrl.
 input type:keyboard {
   repeat_delay 300
   repeat_rate 30
+  xkb_options altwin:ctrl_win
 }
 
 bindsym --locked XF86MonBrightnessUp exec brightnessctl -q set +5%
@@ -26,23 +29,8 @@ bindsym --locked XF86KbdBrightnessDown exec brightnessctl -q -d '*::kbd_backligh
 bindsym --locked XF86AudioRaiseVolume exec wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
 bindsym --locked XF86AudioLowerVolume exec wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
 bindsym --locked XF86AudioMute exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
-bindsym Mod4+Control+q exec intent-os-lock
+# Cmd+Q (and Ctrl+Cmd+Q) lock the screen instead of quitting Intent.
+bindsym Control+q exec intent-os-lock
 
-bar {
-  position top
-  height 24
-  font pango:Noto Sans, Symbols Nerd Font Mono 10
-  status_command /usr/lib/intent-os/status-bar
-  workspace_buttons no
-  binding_mode_indicator no
-  tray_output none
-  status_padding 4
-  status_edge_padding 10
-  colors {
-    background #0b0b0c
-    statusline #d4d4d8
-    separator #0b0b0c
-  }
-}
 
 exec /usr/lib/intent-os/session-start

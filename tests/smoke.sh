@@ -11,6 +11,8 @@ set -euo pipefail
 ISO=${1:?usage: tests/smoke.sh <iso> [out-dir]}
 OUT=${2:-out/smoke}
 PIN=2468
+# Not UTC, so a time zone the installer drops shows up.
+TZ_UNDER_TEST=America/Los_Angeles
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 
@@ -34,7 +36,7 @@ python3 -m http.server 8080 --bind 127.0.0.1 --directory "$REPO_DIR" >"$OUT/repo
 HTTP_PID=$!
 trap 'kill "$HTTP_PID" 2>/dev/null || true' EXIT
 
-printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=UTC\nAFTER=poweroff\nREPO=http://10.0.2.2:8080\n' "$PIN" > "$OUT/auto.conf"
+printf 'DISK=/dev/vda\nPIN=%s\nTIMEZONE=%s\nAFTER=poweroff\nREPO=http://10.0.2.2:8080\n' "$PIN" "$TZ_UNDER_TEST" > "$OUT/auto.conf"
 
 # slow scales waits when there is no KVM (aarch64 CI runners may lack it).
 slow=1
@@ -156,4 +158,6 @@ done
 ls -l "$OUT"/*.png 2>/dev/null || echo "warning: no screenshots were saved"
 
 (( booted )) || fail "Intent window never appeared (no INTENT_OS_BOOT_OK on serial)"
-result "PASS: installed, booted, Intent window visible"
+grep -q "INTENT_OS_BOOT_OK tz=/usr/share/zoneinfo/$TZ_UNDER_TEST" "$OUT/boot.log" ||
+  fail "time zone not set to $TZ_UNDER_TEST ($(grep -ao 'INTENT_OS_BOOT_OK tz=[^ ]*' "$OUT/boot.log" | head -n1))"
+result "PASS: installed, booted, Intent window visible, time zone kept"
