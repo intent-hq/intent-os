@@ -40,9 +40,21 @@ window { background: transparent; }
 """
 
 
-def run(*cmd):
-    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True)
+# Menus and prompts opened from the bar (Wi-Fi picker, confirmations). The bar
+# stays open until they close.
+held = []
+
+
+def run(*cmd, hold=False):
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True)
+    if hold:
+        held.append(proc)
+
+
+def holding():
+    held[:] = [proc for proc in held if proc.poll() is None]
+    return bool(held)
 
 
 def output(*cmd):
@@ -53,7 +65,7 @@ def output(*cmd):
 
 
 def confirm(message, label, command):
-    run("swaynag", "-t", "warning", "-m", message, "-z", label, command)
+    run("swaynag", "-t", "warning", "-m", message, "-z", label, command, hold=True)
 
 
 def network_text():
@@ -116,7 +128,7 @@ class TopBar(Gtk.Window):
         self.bar = Gtk.Box(spacing=2, name="bar")
         self.bar.set_size_request(-1, HEIGHT)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
-        self.network = self.item(lambda: run("intent-os-wifi"))
+        self.network = self.item(lambda: run("intent-os-wifi", hold=True))
         self.battery = self.item(None)
         self.clock = self.item(None)
         self.button(I_RESTART_INTENT, lambda: run("systemctl", "--user", "restart", "intent.service"))
@@ -190,6 +202,8 @@ class TopBar(Gtk.Window):
             self.close_timer = 0
 
     def close(self):
+        if holding():
+            return True  # check again once the menu or prompt closes
         self.close_timer = 0
         if self.get_child() is self.bar:
             self.remove(self.bar)
