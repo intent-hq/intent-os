@@ -1,1 +1,2 @@
-%wheel ALL=(ALL:ALL) ALL
+# Intent is the whole computer: its owner runs anything as root without a prompt.
+%wheel ALL=(ALL:ALL) NOPASSWD: ALL

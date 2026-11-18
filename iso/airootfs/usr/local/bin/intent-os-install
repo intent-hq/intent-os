@@ -140,7 +140,7 @@ pick_disk() {
 pick_pin() {
   local a b
   say "PIN"
-  echo "Use 4 to 12 digits. You enter it to unlock this device and for sudo."
+  echo "Use 4 to 12 digits. You enter it to unlock this device."
   while :; do
     read -rsp "PIN: " a; echo
     [[ $a =~ ^[0-9]{4,12}$ ]] || { echo "Use 4 to 12 digits."; continue; }

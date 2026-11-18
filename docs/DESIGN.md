@@ -48,11 +48,12 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    gives a built-in bar, so device controls need no extra process.
 2. **Lock first.** `swaylock -f` returns only once the screen is locked, then Intent
    starts behind the lock. It is never visible before the PIN.
-3. **PIN = the owner's Linux password.** The lock screen is hyprlock (clock and an "Enter PIN" field; swaylock is the fallback). After 10 wrong PINs it waits a minute (faillock). swaylock checks it through PAM. It is also the
-   `sudo` password. Root is locked.
+3. **PIN = the owner's Linux password.** The lock screen is hyprlock (clock and an "Enter PIN" field; swaylock is the fallback). After 10 wrong PINs it waits a minute (faillock). Both check it through PAM. Root is locked.
+   **Full admin without prompts:** Intent is the whole computer, so the owner runs
+   `sudo` without a password and polkit allows `wheel` every action (there is no
+   password dialog to answer). The PIN guards the screen, not admin rights.
 4. **Controls** are in the top-right of the bar. Restart and Shut down ask once in a
-   swaynag bar (no password). A polkit rule lets `wheel` reboot and power off from user
-   services.
+   swaynag bar (no password). The polkit rule also covers user services.
 5. **No terminal app.** Intent is the only way to install and sign in to coding agents,
    using its own terminals. This is a deliberate test of Intent as the whole computer;
    gaps found here become small Intent changes, not more OS apps. Emergency access only:
