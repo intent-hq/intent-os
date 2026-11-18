@@ -159,7 +159,26 @@ stateDiagram-v2
 5. **Tests:** the aarch64 ISO is tested by hand in UTM before release. `tests/smoke.sh`
    can run the same install-and-boot test on it, but GitHub's arm64 runners have no KVM,
    so CI runs it only on demand (`arm64_smoke` workflow input).
-6. **Not covered:** bare-metal Apple silicon (needs Asahi's boot chain).
+6. **Bare-metal Apple silicon** uses the Asahi image instead (§8b).
+
+## 8b. Apple silicon (M1, M2) on Asahi Linux
+
+1. **No USB boot.** Apple silicon boots only through Apple's boot policy, so Linux goes
+   next to macOS through the Asahi installer, run from macOS (`asahi/install.sh`). It
+   uses the Asahi ALARM installer build with our `installer_data.json`.
+2. **Image.** `make image-asahi` (aarch64) runs `intent-os-install` in image mode on a
+   loop ESP (fixed volume ID) and a 6 GiB btrfs root, then zips `esp/` and `root.img`.
+   The Asahi installer copies them, adds Apple's firmware to the ESP, and grows the root
+   partition; `x-systemd.growfs` grows btrfs on first boot.
+3. **Packages.** `intent-os-hw-apple-silicon` pulls `asahi-meta` (linux-asahi, m1n1,
+   U-Boot, firmware tools), Asahi Mesa and speaker safety from the `asahi-alarm` repo,
+   which devices keep before Arch Linux ARM's repos. The `asahi` initramfs hook loads
+   the firmware. The boot chain is m1n1 → U-Boot → GRUB (`BOOTAA64.EFI`), so snapshots
+   and the boot-ok flag work as on PCs.
+4. **First boot:** PIN and time zone only (the system is installed); Wi-Fi from the top
+   bar.
+5. **Not covered:** M3 and newer (Asahi does not support them yet). **Untested:** no VM
+   runs this boot chain; test by hand on an M1 or M2 Mac.
 
 ## 9. Later
 

@@ -1,6 +1,6 @@
 #!/bin/bash
-# First boot of a prebuilt image: choose the PIN and time zone, download and
-# install Intent OS, finish setup, and restart into Intent.
+# First boot of a prebuilt image: choose the PIN and time zone. A bootstrap
+# image then downloads and installs Intent OS, finishes setup, and restarts.
 set -u
 flag=/var/lib/intent-os/firstboot
 [[ -e $flag ]] || exit 0
@@ -36,6 +36,15 @@ if [[ ! -e /var/lib/intent-os/pin-set ]]; then
   done
   ln -sf "/usr/share/zoneinfo/$tz" /etc/localtime
   touch /var/lib/intent-os/pin-set
+fi
+
+# A full image (Apple silicon) is installed already: the PIN and time zone are
+# all that is left. Wi-Fi is set up from the top bar once Intent is open.
+if pacman -Q intent-os-session >/dev/null 2>&1; then
+  rm -f "$flag"
+  systemctl disable intent-os-firstboot.service 2>/dev/null || true
+  say "Starting Intent..."
+  exit 0
 fi
 
 say "Waiting for the network"
