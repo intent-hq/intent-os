@@ -66,6 +66,11 @@ build_packages() {
   local p
   for p in "${PACKAGES[@]}"; do
     cp -r "$SRC/packages/$p" "$WORK/pkgbuild/$p"
+    # Each build gets a newer version (0.1.0.<build time>), so installed devices
+    # upgrade only the Intent OS packages that pacman sees as new. intent-appimage
+    # keeps the upstream Intent version.
+    [[ $p == intent-appimage ]] ||
+      sed -i "s/^pkgver=\(.*\)$/pkgver=\1.${BUILD_ID%%-*}/" "$WORK/pkgbuild/$p/PKGBUILD"
     chown -R builder "$WORK/pkgbuild/$p"
     (cd "$WORK/pkgbuild/$p" &&
       sudo -u builder env PKGDEST="$OUT/repo" SRCDEST="$WORK/src" PKGEXT=.pkg.tar.zst \

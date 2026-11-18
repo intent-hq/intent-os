@@ -102,11 +102,14 @@ stateDiagram-v2
    passed the test, and never move backwards.
 2. **When.** `intent-os-update.timer` checks hourly. It runs only when the session's
    logind IdleHint is set (5 min idle) and the device is on AC power.
-3. **Snapshots.** snap-pac takes btrfs pre/post snapshots around every pacman run.
-4. **Intent** is not part of the OS update. It updates its own AppImage, which the
+3. **Incremental.** An update is `pacman -Su`: it downloads only packages that changed.
+   Each CI build stamps the Intent OS packages `0.1.0.<build time>`, so a changed
+   package is always newer. `sudo /usr/lib/intent-os/update --now` updates at once.
+4. **Snapshots.** snap-pac takes btrfs pre/post snapshots around every pacman run.
+5. **Intent** is not part of the OS update. It updates its own AppImage, which the
    owner's account owns, and asks before it restarts. Running agents are never stopped
    by an OS update.
-5. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
+6. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
    firmware, systemd, glibc, Mesa, sway, or Wi-Fi driver updates. A dot on **Restart**
    shows it. The device never reboots by itself for an update.
 
