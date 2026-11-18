@@ -1,0 +1,15 @@
+# Intel Macs with the Apple T2 chip (2018-2020): the t2linux kernel (keyboard,
+# trackpad, audio and Wi-Fi through the T2), Wi-Fi firmware, audio profiles,
+# fan control and the Touch Bar. The installer selects it on T2 hardware.
+pkgname=intent-os-hw-t2
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS hardware support for Intel Macs with the T2 chip"
+arch=(x86_64)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(intent-os-base linux-t2 linux-t2-headers apple-bcm-firmware-fetcher apple-t2-audio-config t2fanrd tiny-dfr)
+
+package() {
+  cp -a "$startdir/files/." "$pkgdir/"
+}

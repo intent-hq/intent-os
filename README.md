@@ -24,13 +24,35 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
    and set the time zone. Type `erase` to confirm. **This erases macOS.**
 5. Remove the stick and restart. The Air boots to the PIN screen, then Intent.
 
-The PIN unlocks the device and is the password for `sudo` in Intent's terminal.
-Click the network name in the top bar to change Wi-Fi. Install coding agents from
+The PIN unlocks the device. Intent and its agents can run `sudo` without a password.
+Move the pointer to the top edge to show the bar (Wi-Fi, battery, clock, restart, shut
+down); click the network name to change Wi-Fi. Cmd+C/X/V copy, cut and paste, also in the terminal. Install coding agents from
 Intent; their sign-in pages open in a small Intent window. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
 The interface uses Inter. Touchpad clicks require a physical press; tap-to-click
 is disabled by default.
+
+## Install on an Intel Mac with the T2 chip (2018–2020)
+
+1. In macOS Recovery (hold Cmd+R at start), open **Startup Security Utility**. Set
+   **No Security** and **Allow booting from external media**.
+2. Start from the stick (hold **Option**, pick **EFI Boot**). Do not erase macOS first:
+   the installer copies the Wi-Fi firmware from it, then erases the disk.
+3. Continue as on the MacBook Air.
+
+## Install on an Apple silicon Mac (M1, M2) — untested
+
+Apple silicon Macs cannot start from a USB stick. Intent OS installs next to macOS with
+the Asahi Linux installer. In macOS Terminal run:
+
+```sh
+curl -fsSL https://github.com/intent-hq/intent-os/releases/latest/download/install-apple-silicon.sh | sh
+```
+
+Give Intent OS at least 20 GB and choose **Intent OS**. Follow the installer's restart
+steps. On first start, set the PIN and time zone; then join Wi-Fi from the top bar.
+M3 and newer chips are not supported yet.
 
 ## Run in a VM on an Apple silicon Mac (UTM)
 
@@ -60,6 +82,9 @@ no tested snapshot like the x86_64 build.
 | `packages/intent-os-session` | sway kiosk, PIN lock, top bar with device controls, Intent supervision |
 | `packages/intent-os-update` | Staged idle-time updates and restart hints |
 | `packages/intent-os-hw-macbookair6` | MacBook Air 6,x: Broadcom Wi-Fi, wake fix, video decode |
+| `packages/intent-os-hw-apple-silicon` | Apple silicon (M1, M2) on Asahi Linux: kernel, m1n1/U-Boot, GPU, speakers |
+| `asahi/install.sh` | macOS script that runs the Asahi installer with the Intent OS image |
+| `packages/intent-os-hw-t2` | Intel Macs with the T2 chip (2018–2020): t2linux kernel, Wi-Fi firmware, audio, fans, Touch Bar |
 | `iso/` | Additions to the archiso `releng` profile, including the installer |
 | `build/in-container.sh` | Builds signed packages and the netinstall ISO |
 | `tests/smoke.sh` | QEMU test: install, boot, Intent window visible, unlock with the PIN |

@@ -22,7 +22,7 @@ DOCKER_ARM = docker run --rm --privileged --platform linux/arm64 \
 	-e INTENT_OS_SIGNING_KEY -e HOST_UID="$(shell id -u)" \
 	$(ALARM_IMAGE) bash build/in-container.sh
 
-.PHONY: packages image smoke lint clean alarm-image image-arm64 smoke-arm64
+.PHONY: packages image smoke lint clean alarm-image image-arm64 image-asahi smoke-arm64
 
 packages:
 	$(DOCKER) packages
@@ -40,11 +40,15 @@ alarm-image:
 image-arm64: alarm-image
 	$(DOCKER_ARM) all
 
+# Apple silicon image for the Asahi installer (after image-arm64 built out/repo).
+image-asahi: alarm-image
+	$(DOCKER_ARM) asahi
+
 smoke-arm64:
 	tests/smoke.sh "$(ISO_ARM64)" out/smoke
 
 lint:
-	shellcheck -x build/*.sh tests/*.sh iso/airootfs/usr/local/bin/intent-os-install \
+	shellcheck -x build/*.sh tests/*.sh asahi/*.sh iso/airootfs/usr/local/bin/intent-os-install \
 		$$(grep -rlE '^#!/bin/(ba)?sh' packages/*/files)
 
 clean:

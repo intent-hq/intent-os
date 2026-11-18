@@ -1,0 +1,250 @@
+#!/usr/bin/python3
+"""Intent OS top bar: network, battery, clock and device controls.
+
+It takes no space. A 2 px strip waits at the top edge; when the pointer
+touches it, the bar opens on top of Intent and closes once the pointer
+leaves it. Icons: refresh = restart Intent, circular arrow = restart the
+device (amber when an installed update needs it), power = shut down.
+"""
+import os
+import subprocess
+import time
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gdk, GLib, Gtk, GtkLayerShell  # noqa: E402
+
+HEIGHT = 28
+TRIGGER = 2
+CLOSE_DELAY_MS = 350
+
+I_WIFI = ["\U000f092e", "\U000f091f", "\U000f0922", "\U000f0925", "\U000f0928"]
+I_WIRED = "\U000f0200"
+I_OFFLINE = "\U000f05aa"
+I_BATTERY = ["\U000f007a", "\U000f007b", "\U000f007c", "\U000f007d", "\U000f007e",
+             "\U000f007f", "\U000f0080", "\U000f0081", "\U000f0082", "\U000f0079"]
+I_CHARGING = "\U000f0084"
+I_BATTERY_ALERT = "\U000f0083"  # worn battery: replace it
+I_RESTART_INTENT = "\U000f0450"
+I_REBOOT = "\U000f0709"
+I_POWER = "\U000f0425"
+
+CSS = b"""
+window { background: transparent; }
+#bar { background: #0b0b0c; color: #d4d4d8; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
+.item { padding: 0 9px; }
+.button { padding: 0 8px; color: #a1a1aa; border-radius: 6px; }
+.button:hover, .item.clickable:hover { background: #27272a; color: #fafafa; }
+.hint { color: #fbbf24; }
+"""
+
+
+# Menus and prompts opened from the bar (Wi-Fi picker, confirmations). The bar
+# stays open until they close.
+held = []
+
+
+def run(*cmd, hold=False):
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True)
+    if hold:
+        held.append(proc)
+
+
+def holding():
+    held[:] = [proc for proc in held if proc.poll() is None]
+    return bool(held)
+
+
+def output(*cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def confirm(message, label, command):
+    run("swaynag", "-t", "warning", "-m", message, "-z", label, command, hold=True)
+
+
+def network_text():
+    for line in output("nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active").splitlines():
+        name, _, kind = line.rpartition(":")
+        if kind == "802-11-wireless":
+            signal = 0
+            for row in output("nmcli", "-t", "-f", "IN-USE,SIGNAL", "dev", "wifi", "list",
+                              "--rescan", "no").splitlines():
+                if row.startswith("*:"):
+                    signal = int(row[2:] or 0)
+                    break
+            return f"{I_WIFI[min(4, (signal + 24) // 25)]}  {name.replace(chr(92) + ':', ':')}"
+        if kind == "802-3-ethernet":
+            return I_WIRED
+    return I_OFFLINE
+
+
+def read_int(path):
+    try:
+        with open(path) as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def battery_percent(path):
+    """Charge as a percentage. A worn battery's own "full" can be tiny, so
+    the kernel's capacity can pass 100% (or swing wildly); when the battery
+    holds under half its design charge, measure against the design instead.
+    Returns (percent, worn)."""
+    for kind in ("energy", "charge"):
+        now = read_int(f"{path}/{kind}_now")
+        full = read_int(f"{path}/{kind}_full")
+        design = read_int(f"{path}/{kind}_full_design")
+        if now is not None and full and design:
+            worn = full < design // 2
+            pct = round(100 * now / (design if worn else full))
+            return max(0, min(100, pct)), worn
+    cap = read_int(f"{path}/capacity")
+    return (None, False) if cap is None else (max(0, min(100, cap)), False)
+
+
+def battery_text():
+    base = "/sys/class/power_supply"
+    for ps in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        path = f"{base}/{ps}"
+        try:
+            with open(f"{path}/type") as f:
+                if f.read().strip() != "Battery":
+                    continue
+            with open(f"{path}/status") as f:
+                status = f.read().strip()
+        except OSError:
+            continue
+        cap, worn = battery_percent(path)
+        if cap is None:
+            continue
+        if worn:
+            return f"{I_BATTERY_ALERT} {cap}%"
+        if status == "Charging":
+            return f"{I_CHARGING} {cap}%"
+        return f"{I_BATTERY[max(0, min(9, cap // 10 - 1))]} {cap}%"
+    return ""
+
+
+class TopBar(Gtk.Window):
+    def __init__(self):
+        super().__init__()
+        self.close_timer = 0
+        self.set_app_paintable(True)
+        visual = self.get_screen().get_rgba_visual()
+        if visual:
+            self.set_visual(visual)
+
+        GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_namespace(self, "intent-os-top-bar")
+        GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
+        for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_anchor(self, edge, True)
+        GtkLayerShell.set_exclusive_zone(self, 0)
+        GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
+
+        provider = Gtk.CssProvider()
+        provider.load_from_data(CSS)
+        Gtk.StyleContext.add_provider_for_screen(
+            self.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        self.bar = Gtk.Box(spacing=2, name="bar")
+        self.bar.set_size_request(-1, HEIGHT)
+        self.bar.pack_start(Gtk.Box(), True, True, 0)
+        self.network = self.item(lambda: run("intent-os-wifi", hold=True))
+        self.battery = self.item(None)
+        self.clock = self.item(None)
+        self.button(I_RESTART_INTENT, lambda: run("systemctl", "--user", "restart", "intent.service"))
+        self.reboot = self.button(I_REBOOT, lambda: confirm(
+            "Restart this device?", "Restart", "systemctl reboot"))
+        self.button(I_POWER, lambda: confirm(
+            "Shut down this device?", "Shut down", "systemctl poweroff"))
+
+        self.strip = Gtk.EventBox()
+        self.strip.set_size_request(-1, TRIGGER)
+        self.add(self.strip)
+        self.strip.connect("enter-notify-event", lambda *_: self.open())
+        self.connect("enter-notify-event", lambda *_: self.cancel_close())
+        self.connect("leave-notify-event", self.on_leave)
+
+        self.refresh()
+        GLib.timeout_add_seconds(5, self.refresh)
+
+    def item(self, action):
+        box = Gtk.EventBox()
+        label = Gtk.Label()
+        box.add(label)
+        box.get_style_context().add_class("item")
+        if action:
+            box.get_style_context().add_class("clickable")
+            box.connect("button-press-event", lambda *_: action())
+        self.bar.pack_start(box, False, False, 0)
+        return label
+
+    def button(self, icon, action):
+        box = Gtk.EventBox()
+        label = Gtk.Label(label=icon)
+        box.add(label)
+        box.get_style_context().add_class("button")
+        box.connect("button-press-event", lambda *_: action())
+        self.bar.pack_start(box, False, False, 0)
+        return box
+
+    def refresh(self):
+        self.network.set_text(network_text())
+        bat = battery_text()
+        self.battery.set_text(bat)
+        self.battery.get_parent().set_visible(bool(bat))
+        self.clock.set_text(time.strftime("%a %-d %b  %H:%M"))
+        ctx = self.reboot.get_style_context()
+        if os.path.exists("/run/intent-os/reboot-required"):
+            ctx.add_class("hint")
+        else:
+            ctx.remove_class("hint")
+        return True
+
+    def open(self):
+        self.cancel_close()
+        if self.get_child() is self.bar:
+            return
+        self.refresh()
+        self.remove(self.strip)
+        self.add(self.bar)
+        self.bar.show_all()
+        self.battery.get_parent().set_visible(bool(self.battery.get_text()))
+
+    def on_leave(self, _widget, event):
+        # Moving onto a child of the bar is not leaving it.
+        if event.detail != Gdk.NotifyType.INFERIOR:
+            self.cancel_close()
+            self.close_timer = GLib.timeout_add(CLOSE_DELAY_MS, self.close)
+
+    def cancel_close(self):
+        if self.close_timer:
+            GLib.source_remove(self.close_timer)
+            self.close_timer = 0
+
+    def close(self):
+        if holding():
+            return True  # check again once the menu or prompt closes
+        self.close_timer = 0
+        if self.get_child() is self.bar:
+            self.remove(self.bar)
+            self.add(self.strip)
+            self.strip.show()
+            self.resize(1, TRIGGER)
+        return False
+
+
+if __name__ == "__main__":
+    bar = TopBar()
+    bar.connect("destroy", Gtk.main_quit)
+    bar.show_all()
+    Gtk.main()

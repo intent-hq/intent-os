@@ -41,18 +41,19 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    session-start: swaylock first, then intent-os-session.target
        intent.service      Intent, supervised
        intent-os-idle      lock after 5 min idle and before sleep
-   swaybar (top, 24 px)    network, battery, clock, then icons: restart Intent, restart, power
+       intent-os-top-bar   hover the top edge: network, battery, clock, restart Intent, restart, power
 ```
 
-1. **sway, not cage.** The PIN lock needs `ext-session-lock`, which cage lacks. sway also
-   gives a built-in bar, so device controls need no extra process.
+1. **sway, not cage.** The PIN lock needs `ext-session-lock`, which cage lacks.
 2. **Lock first.** `swaylock -f` returns only once the screen is locked, then Intent
    starts behind the lock. It is never visible before the PIN.
-3. **PIN = the owner's Linux password.** The lock screen is hyprlock (clock and an "Enter PIN" field; swaylock is the fallback). After 10 wrong PINs it waits a minute (faillock). swaylock checks it through PAM. It is also the
-   `sudo` password. Root is locked.
-4. **Controls** are in the top-right of the bar. Restart and Shut down ask once in a
-   swaynag bar (no password). A polkit rule lets `wheel` reboot and power off from user
-   services.
+3. **PIN = the owner's Linux password.** The lock screen is hyprlock (clock and an "Enter PIN" field; swaylock is the fallback). After 10 wrong PINs it waits a minute (faillock). Both check it through PAM. Root is locked.
+   **Full admin without prompts:** Intent is the whole computer, so the owner runs
+   `sudo` without a password and polkit allows `wheel` every action (there is no
+   password dialog to answer). The PIN guards the screen, not admin rights.
+4. **Controls** take no space: move the pointer to the top edge and a bar opens over
+   Intent (GTK layer-shell); it closes when the pointer leaves. Controls are on its right. Restart and Shut down ask once in a
+   swaynag bar (no password). The polkit rule also covers user services.
 5. **No terminal app.** Intent is the only way to install and sign in to coding agents,
    using its own terminals. This is a deliberate test of Intent as the whole computer;
    gaps found here become small Intent changes, not more OS apps. Emergency access only:
@@ -66,7 +67,8 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    (`claude auth login`) finishes there, and the window closes when the page returns
    to the CLI. Escape closes it.
 8. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
-   Ctrl+Cmd+Q locks. The power key suspends (it sits next to Delete on the Air).
+   Ctrl+Cmd+Q locks. Cmd+C/X/V copy, cut and paste in Intent, terminal included, and
+   Ctrl keeps its usual meaning (Intent handles Super+C/X/V on Linux). The power key suspends (it sits next to Delete on the Air).
 
 ## 5. Supervision
 
@@ -100,11 +102,14 @@ stateDiagram-v2
    passed the test, and never move backwards.
 2. **When.** `intent-os-update.timer` checks hourly. It runs only when the session's
    logind IdleHint is set (5 min idle) and the device is on AC power.
-3. **Snapshots.** snap-pac takes btrfs pre/post snapshots around every pacman run.
-4. **Intent** is not part of the OS update. It updates its own AppImage, which the
+3. **Incremental.** An update is `pacman -Su`: it downloads only packages that changed.
+   Each CI build stamps the Intent OS packages `0.1.0.<build time>`, so a changed
+   package is always newer. `sudo /usr/lib/intent-os/update --now` updates at once.
+4. **Snapshots.** snap-pac takes btrfs pre/post snapshots around every pacman run.
+5. **Intent** is not part of the OS update. It updates its own AppImage, which the
    owner's account owns, and asks before it restarts. Running agents are never stopped
    by an OS update.
-5. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
+6. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
    firmware, systemd, glibc, Mesa, sway, or Wi-Fi driver updates. A dot on **Restart**
    shows it. The device never reboots by itself for an update.
 
@@ -123,6 +128,23 @@ stateDiagram-v2
 | Camera | Not supported (needs out-of-tree `facetimehd`). |
 | Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
+## 7a. Intel Macs with the T2 chip (2018–2020)
+
+1. **Kernel.** The keyboard, trackpad, audio and Touch Bar sit behind the T2 and need the
+   t2linux kernel (`linux-t2`, driver `t2bce`). CI copies `linux-t2` and the T2 helper
+   packages from the unsigned `arch-mact2` repo into the signed `intent-os` repo, after
+   checking each file against the sha256 in that repo's database.
+2. **Installer.** The live ISO boots `linux-t2` on every machine (it is Arch's kernel plus
+   T2 drivers), with `intel_iommu=on iommu=pt pm_async=off`.
+3. **Wi-Fi firmware** is Apple's and only ships with macOS. On a T2 Mac the installer runs
+   `apple-bcm-firmware-fetcher` before it erases the disk, then copies the files to the
+   installed system.
+4. **Installed system.** `intent-os-hw-t2` (selected by the T2 PCI ID `106b:1801`) adds
+   `linux-t2` as the default GRUB entry (Arch's kernel stays as a fallback), fan control
+   (`t2fanrd`) and the Touch Bar (`tiny-dfr`).
+5. **Tests:** by hand on a T2 Mac. The QEMU boot test covers the T2 kernel on generic
+   hardware through the live ISO.
+
 ## 8. aarch64 (UTM on Apple silicon, UEFI ARM machines)
 
 1. **Same shape as x86_64:** a netinstall ISO with the same installer. One ISO per
@@ -137,7 +159,26 @@ stateDiagram-v2
 5. **Tests:** the aarch64 ISO is tested by hand in UTM before release. `tests/smoke.sh`
    can run the same install-and-boot test on it, but GitHub's arm64 runners have no KVM,
    so CI runs it only on demand (`arm64_smoke` workflow input).
-6. **Not covered:** bare-metal Apple silicon (needs Asahi's boot chain).
+6. **Bare-metal Apple silicon** uses the Asahi image instead (§8b).
+
+## 8b. Apple silicon (M1, M2) on Asahi Linux
+
+1. **No USB boot.** Apple silicon boots only through Apple's boot policy, so Linux goes
+   next to macOS through the Asahi installer, run from macOS (`asahi/install.sh`). It
+   uses the Asahi ALARM installer build with our `installer_data.json`.
+2. **Image.** `make image-asahi` (aarch64) runs `intent-os-install` in image mode on a
+   loop ESP (fixed volume ID) and a 6 GiB btrfs root, then zips `esp/` and `root.img`.
+   The Asahi installer copies them, adds Apple's firmware to the ESP, and grows the root
+   partition; `x-systemd.growfs` grows btrfs on first boot.
+3. **Packages.** `intent-os-hw-apple-silicon` pulls `asahi-meta` (linux-asahi, m1n1,
+   U-Boot, firmware tools), Asahi Mesa and speaker safety from the `asahi-alarm` repo,
+   which devices keep before Arch Linux ARM's repos. The `asahi` initramfs hook loads
+   the firmware. The boot chain is m1n1 → U-Boot → GRUB (`BOOTAA64.EFI`), so snapshots
+   and the boot-ok flag work as on PCs.
+4. **First boot:** PIN and time zone only (the system is installed); Wi-Fi from the top
+   bar.
+5. **Not covered:** M3 and newer (Asahi does not support them yet). **Untested:** no VM
+   runs this boot chain; test by hand on an M1 or M2 Mac.
 
 ## 9. Later
 

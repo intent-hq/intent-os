@@ -15,7 +15,25 @@ ARCH=$(uname -m)
 # archiso is not packaged for Arch Linux ARM; aarch64 runs it from this tag.
 ARCHISO_REF=v92
 PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-bootstrap)
-[[ $ARCH == x86_64 ]] && PACKAGES+=(intent-os-hw-macbookair6)
+if [[ $ARCH == x86_64 ]]; then
+  PACKAGES+=(intent-os-hw-macbookair6 intent-os-hw-t2)
+else
+  PACKAGES+=(intent-os-hw-apple-silicon)
+fi
+# Apple silicon (Asahi Linux): packages from asahi-alarm; the image is a zip
+# for the Asahi installer, which runs from macOS.
+# shellcheck disable=SC2016 # pacman expands $arch
+ASAHI_SERVER='https://github.com/asahi-alarm/asahi-alarm/releases/download/$arch'
+ASAHI_ESP_VOLID=2abf9f91
+ASAHI_ESP_BYTES=524288000
+ASAHI_ROOT_MIB=6144
+# macOS system firmware versions the Asahi installer can set up (from asahi-alarm).
+ASAHI_SUPPORTED_FW='["12.3", "12.3.1", "13.5", "14.8.3"]'
+# T2 Macs (2018-2020): t2linux packages, copied into the signed intent-os repo
+# so devices get a tested, signed set. The arch-mact2 repo itself is unsigned;
+# each file is checked against the sha256 in its database.
+T2_REPO=https://mirror.funami.tech/arch-mact2/os/x86_64
+T2_PACKAGES=(linux-t2 linux-t2-headers apple-bcm-firmware-fetcher apple-t2-audio-config t2fanrd tiny-dfr)
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
 : "${BUILD_ID:?set BUILD_ID}"
@@ -31,7 +49,7 @@ prepare() {
     # The imported rootfs keeps CheckSpace, which fails on overlay mounts.
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
     pacman -Syu --noconfirm --needed base-devel git arch-install-scripts btrfs-progs \
-      dosfstools gptfdisk grub libisoburn erofs-utils squashfs-tools mtools >/dev/null
+      dosfstools gptfdisk grub libisoburn erofs-utils squashfs-tools mtools zip >/dev/null
   else
     pacman-key --populate archlinux >/dev/null
     pacman -Syu --noconfirm --needed archiso git grub erofs-utils mtools dosfstools >/dev/null
@@ -58,6 +76,26 @@ prepare() {
   fi
 }
 
+fetch_t2_packages() {
+  log "Fetching T2 Mac packages"
+  local db=$WORK/t2 p desc file sum
+  rm -rf "$db" && mkdir -p "$db"
+  curl -fsSL --retry 3 -o "$db/arch-mact2.db" "$T2_REPO/arch-mact2.db"
+  tar -xf "$db/arch-mact2.db" -C "$db"
+  for p in "${T2_PACKAGES[@]}"; do
+    desc=$(for d in "$db"/*/desc; do
+      if [[ $(sed -n '/^%NAME%$/{n;p;q}' "$d") == "$p" ]]; then echo "$d"; fi; done | head -n1)
+    [[ -n $desc ]] || { echo "error: $p is not in arch-mact2" >&2; exit 1; }
+    file=$(sed -n '/^%FILENAME%$/{n;p;q}' "$desc")
+    sum=$(sed -n '/^%SHA256SUM%$/{n;p;q}' "$desc")
+    curl -fsSL --retry 3 -o "$OUT/repo/$file" "$T2_REPO/$file"
+    echo "$sum  $OUT/repo/$file" | sha256sum -c --quiet -
+    if [[ -n $KEY_ID ]]; then
+      gpg --batch --yes --detach-sign --no-armor -u "$KEY_ID" -o "$OUT/repo/$file.sig" "$OUT/repo/$file"
+    fi
+  done
+}
+
 build_packages() {
   log "Building packages"
   rm -rf "$OUT/repo" "$WORK/pkgbuild"
@@ -66,11 +104,17 @@ build_packages() {
   local p
   for p in "${PACKAGES[@]}"; do
     cp -r "$SRC/packages/$p" "$WORK/pkgbuild/$p"
+    # Each build gets a newer version (0.1.0.<build time>), so installed devices
+    # upgrade only the Intent OS packages that pacman sees as new. intent-appimage
+    # keeps the upstream Intent version.
+    [[ $p == intent-appimage ]] ||
+      sed -i "s/^pkgver=\(.*\)$/pkgver=\1.${BUILD_ID%%-*}/" "$WORK/pkgbuild/$p/PKGBUILD"
     chown -R builder "$WORK/pkgbuild/$p"
     (cd "$WORK/pkgbuild/$p" &&
       sudo -u builder env PKGDEST="$OUT/repo" SRCDEST="$WORK/src" PKGEXT=.pkg.tar.zst \
         makepkg -fd --noconfirm "${SIGN_ARGS[@]}")
   done
+  if [[ $ARCH == x86_64 ]]; then fetch_t2_packages; fi
   repo-add -q "${REPO_SIGN_ARGS[@]}" "$OUT/repo/intent-os.db.tar.gz" "$OUT"/repo/*.pkg.tar.zst
   # Release assets cannot be symlinks.
   local f
@@ -93,10 +137,14 @@ write_mirrorlist() {
 # headers or full firmware packages.
 build_live_package() {
   log "Building the live Wi-Fi package"
-  pacman -S --noconfirm --needed linux linux-headers broadcom-wl-dkms \
+  # The live system runs the T2 kernel: it is Arch's kernel plus T2 Mac drivers,
+  # so the same stick also has a keyboard and Wi-Fi on T2 Macs.
+  pacman -U --noconfirm --needed "$OUT"/repo/linux-t2-[0-9]*.pkg.tar.zst \
+    "$OUT"/repo/linux-t2-headers-[0-9]*.pkg.tar.zst >/dev/null
+  pacman -S --noconfirm --needed broadcom-wl-dkms \
     linux-firmware-intel linux-firmware-atheros linux-firmware-mediatek >/dev/null
   local linux_ver kdir wl dir=$WORK/live-pkg
-  linux_ver=$(pacman -Q linux | awk '{print $2}')
+  linux_ver=$(pacman -Q linux-t2 | awk '{print $2}')
   kdir=$(find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/updates/dkms' ';' -print | head -n1)
   wl=$(find "$kdir/updates/dkms" -name 'wl.ko*' | head -n1)
   [[ -n $wl ]] || { echo "error: dkms did not build wl for $kdir" >&2; exit 1; }
@@ -123,7 +171,7 @@ pkgrel=1
 pkgdesc="Intent OS live installer Wi-Fi: prebuilt wl driver and Wi-Fi firmware"
 arch=(x86_64)
 license=(custom)
-depends=("linux=$linux_ver")
+depends=("linux-t2=$linux_ver")
 options=(!strip !debug)
 package() { cp -a "\$startdir/root/." "\$pkgdir/"; }
 PKG
@@ -184,21 +232,27 @@ build_iso() {
     "$profile/airootfs/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
   # The installer needs no docs, translations or headers on the stick.
   sed -i '/^\[options\]/a NoExtract = usr/share/locale/* usr/share/man/* usr/share/doc/* usr/share/info/* usr/share/gtk-doc/* usr/share/gir-1.0/* usr/include/* usr/share/i18n/*\nNoExtract = !usr/share/locale/locale.alias' "$profile/pacman.conf"
-  if [[ $ARCH == aarch64 ]]; then
-    # intent-os-bootstrap exposes /boot/Image as vmlinuz-linux for mkarchiso.
-    cat >> "$profile/pacman.conf" <<CONF
+  # aarch64: intent-os-bootstrap exposes /boot/Image as vmlinuz-linux for
+  # mkarchiso. x86_64: the T2 kernel and firmware fetcher come from intent-os.
+  cat >> "$profile/pacman.conf" <<CONF
 
 [intent-os]
 SigLevel = Optional TrustAll
 Server = file://$OUT/repo
 CONF
-  else
+  if [[ $ARCH == x86_64 ]]; then
     cat >> "$profile/pacman.conf" <<CONF
 
 [intent-os-live]
 SigLevel = Optional TrustAll
 Server = file://$WORK/live-repo
 CONF
+    # Boot the live system with the T2 kernel; T2 Macs need IOMMU passthrough.
+    find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
+      \( -name '*.conf' -o -name '*.cfg' \) -exec sed -i \
+      -e 's/vmlinuz-linux\b/vmlinuz-linux-t2/g' -e 's/initramfs-linux\.img/initramfs-linux-t2.img/g' \
+      -e 's/archisosearchuuid=%ARCHISO_UUID%/& intel_iommu=on iommu=pt pm_async=off/' {} +
+    grep -rq vmlinuz-linux-t2 "$profile/grub" || { echo "error: live boot entries still use vmlinuz-linux" >&2; exit 1; }
   fi
 
   # Serial console for the QEMU boot test. tty0 comes last so it is the main
@@ -260,12 +314,120 @@ CONF
   fi
 }
 
+trust_asahi_alarm() {
+  pacman-key --list-keys 2>/dev/null | grep -qi asahi && return 0
+  local db=$WORK/asahi-db desc file
+  rm -rf "$db" && mkdir -p "$db"
+  curl -fsSL --retry 3 -o "$db/asahi-alarm.db" "${ASAHI_SERVER/\$arch/aarch64}/asahi-alarm.db"
+  tar -xf "$db/asahi-alarm.db" -C "$db"
+  desc=$(for d in "$db"/*/desc; do
+    if [[ $(sed -n '/^%NAME%$/{n;p;q}' "$d") == asahi-alarm-keyring ]]; then echo "$d"; fi; done | head -n1)
+  file=$(sed -n '/^%FILENAME%$/{n;p;q}' "$desc")
+  curl -fsSL --retry 3 -o "$db/$file" "${ASAHI_SERVER/\$arch/aarch64}/$file"
+  echo "$(sed -n '/^%SHA256SUM%$/{n;p;q}' "$desc")  $db/$file" | sha256sum -c --quiet -
+  pacman -U --noconfirm "$db/$file" >/dev/null
+  pacman-key --populate asahi-alarm >/dev/null
+}
+
+build_asahi_image() {
+  [[ $ARCH == aarch64 ]] || { echo "error: the Apple silicon image builds on aarch64" >&2; exit 1; }
+  log "Building the Apple silicon (Asahi) image"
+  trust_asahi_alarm
+  # The installer reads its package config and the Intent OS key from /etc/intent-os.
+  local etc=/etc/intent-os intent_siglevel="Optional TrustAll"
+  mkdir -p "$etc"
+  if [[ -d $OUT/keyring ]]; then
+    cp "$OUT/keyring/intent-os.gpg" "$OUT/keyring/intent-os-trusted" "$etc/"
+    intent_siglevel="Required DatabaseRequired"
+  fi
+  cat > "$etc/pacman-install.conf" <<CONF
+[options]
+Architecture = aarch64
+SigLevel = Required DatabaseOptional
+ParallelDownloads = 5
+
+[intent-os]
+SigLevel = $intent_siglevel
+Server = https://github.com/intent-hq/intent-os/releases/download/repo-\$arch
+
+[asahi-alarm]
+Server = $ASAHI_SERVER
+
+[core]
+Include = /etc/pacman.d/mirrorlist
+
+[extra]
+Include = /etc/pacman.d/mirrorlist
+
+[alarm]
+Include = /etc/pacman.d/mirrorlist
+CONF
+
+  local dir=$WORK/asahi esp_dev root_dev name="intent-os-$BUILD_ID-apple-silicon"
+  rm -rf "$dir" && mkdir -p "$dir/pkg/esp" "$OUT/asahi"
+  truncate -s "$ASAHI_ESP_BYTES" "$dir/esp.img"
+  truncate -s "${ASAHI_ROOT_MIB}M" "$dir/pkg/root.img"
+  esp_dev=$(losetup -f --show "$dir/esp.img")
+  root_dev=$(losetup -f --show "$dir/pkg/root.img")
+  printf '%s\n' "ESP_DEV=$esp_dev" "ROOT_DEV=$root_dev" IMAGE=1 FIRSTBOOT=1 TIMEZONE=UTC \
+    HW=intent-os-hw-apple-silicon "REPO=file://$OUT/repo" "ESP_VOLID=$ASAHI_ESP_VOLID" > "$dir/install.conf"
+  INTENT_OS_INSTALL_CONFIG=$dir/install.conf bash "$SRC/iso/airootfs/usr/local/bin/intent-os-install"
+  mkdir -p "$dir/mnt"
+  mount "$esp_dev" "$dir/mnt"
+  cp -a "$dir/mnt/." "$dir/pkg/esp/"
+  umount "$dir/mnt"
+  losetup -d "$esp_dev" "$root_dev"
+  [[ -s $dir/pkg/esp/m1n1/boot.bin && -s $dir/pkg/esp/EFI/BOOT/BOOTAA64.EFI ]] ||
+    { echo "error: the ESP lacks m1n1/boot.bin or EFI/BOOT/BOOTAA64.EFI" >&2; exit 1; }
+  rm -f "$OUT/asahi/$name.zip"
+  (cd "$dir/pkg" && zip -1 -q -r "$OUT/asahi/$name.zip" esp root.img)
+
+  cat > "$OUT/asahi/installer_data.json" <<JSON
+{
+  "os_list": [
+    {
+      "name": "Intent OS",
+      "default_os_name": "Intent OS",
+      "boot_object": "m1n1.bin",
+      "next_object": "m1n1/boot.bin",
+      "package": "https://github.com/intent-hq/intent-os/releases/download/iso-$BUILD_ID/$name.zip",
+      "supported_fw": $ASAHI_SUPPORTED_FW,
+      "extras": {},
+      "partitions": [
+        {
+          "name": "EFI",
+          "type": "EFI",
+          "size": "${ASAHI_ESP_BYTES}B",
+          "format": "fat",
+          "volume_id": "0x$ASAHI_ESP_VOLID",
+          "copy_firmware": true,
+          "copy_installer_data": true,
+          "source": "esp"
+        },
+        {
+          "name": "Root",
+          "type": "Linux",
+          "size": "$((ASAHI_ROOT_MIB * 1024 * 1024))B",
+          "expand": true,
+          "image": "root.img"
+        }
+      ]
+    }
+  ]
+}
+JSON
+  cp "$SRC/asahi/install.sh" "$OUT/asahi/install-apple-silicon.sh"
+  (cd "$OUT/asahi" && sha256sum "$name.zip" > SHA256SUMS.apple-silicon)
+  log "Apple silicon image: $(du -h "$OUT/asahi/$name.zip" | cut -f1)"
+}
+
 prepare
 case ${1:-all} in
   packages) build_packages ;;
   iso) build_iso ;;
+  asahi) build_asahi_image ;;
   all) build_packages; build_iso ;;
-  *) echo "usage: $0 packages|iso|all" >&2; exit 2 ;;
+  *) echo "usage: $0 packages|iso|asahi|all" >&2; exit 2 ;;
 esac
 [[ -n ${HOST_UID:-} ]] && chown -R "$HOST_UID" "$OUT"
 log "Done: $OUT"

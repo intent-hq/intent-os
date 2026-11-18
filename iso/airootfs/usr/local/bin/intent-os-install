@@ -23,7 +23,8 @@ MNT=/mnt
 BTRFS_OPTS=noatime,compress=zstd:1
 
 AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot HW="" REPO=""
-IMAGE=0 FIRSTBOOT=0 BOOTSTRAP=0 ESP_DEV="" ROOT_DEV="" CONSOLE=""
+IMAGE=0 FIRSTBOOT=0 BOOTSTRAP=0 ESP_DEV="" ROOT_DEV="" CONSOLE="" ESP_VOLID=""
+APPLE_SILICON=intent-os-hw-apple-silicon
 ARCH=$(uname -m)
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -51,13 +52,14 @@ load_auto_config() {
       PIN) [[ $value =~ ^[0-9]{4,12}$ ]] && PIN=$value ;;
       TIMEZONE) [[ -f /usr/share/zoneinfo/$value ]] && TIMEZONE=$value ;;
       AFTER) [[ $value =~ ^(poweroff|reboot)$ ]] && AFTER=$value ;;
-      HW) [[ $value =~ ^intent-os-hw-[a-z0-9]+$ ]] && HW=$value ;;
+      HW) [[ $value =~ ^intent-os-hw-[a-z0-9-]+$ ]] && HW=$value ;;
       REPO) [[ $value =~ ^(https?|file)://[A-Za-z0-9.:/_-]+$ ]] && REPO=$value ;;
       IMAGE) [[ $value == 1 ]] && IMAGE=1 ;;
       FIRSTBOOT) [[ $value == 1 ]] && FIRSTBOOT=1 ;;
       BOOTSTRAP) [[ $value == 1 ]] && BOOTSTRAP=1 FIRSTBOOT=1 ;;
       ESP_DEV) [[ $value =~ ^/dev/[a-z0-9]+$ ]] && ESP_DEV=$value ;;
       ROOT_DEV) [[ $value =~ ^/dev/[a-z0-9]+$ ]] && ROOT_DEV=$value ;;
+      ESP_VOLID) [[ $value =~ ^[0-9A-Fa-f]{8}$ ]] && ESP_VOLID=$value ;;
       CONSOLE) [[ $value =~ ^[A-Za-z0-9,=\ ]+$ ]] && CONSOLE=$value ;;
     esac
   done < "$source"
@@ -140,7 +142,7 @@ pick_disk() {
 pick_pin() {
   local a b
   say "PIN"
-  echo "Use 4 to 12 digits. You enter it to unlock this device and for sudo."
+  echo "Use 4 to 12 digits. You enter it to unlock this device."
   while :; do
     read -rsp "PIN: " a; echo
     [[ $a =~ ^[0-9]{4,12}$ ]] || { echo "Use 4 to 12 digits."; continue; }
@@ -192,7 +194,7 @@ partition() {
     udevadm settle
     ESP=$(part 1) ROOT=$(part 2)
   fi
-  mkfs.fat -F32 -n EFI "$ESP"
+  mkfs.fat -F32 -n EFI ${ESP_VOLID:+-i "$ESP_VOLID"} "$ESP"
   mkfs.btrfs -f -L intent-os "$ROOT"
 
   mount "$ROOT" "$MNT"
@@ -208,9 +210,40 @@ partition() {
   mount -o umask=0077 "$ESP" "$MNT/efi"
 }
 
+# Apple T2 bridge (PCI 106b:1801): Intel Macs from 2018 to 2020.
+is_t2() {
+  local d
+  for d in /sys/bus/pci/devices/*; do
+    [[ $(cat "$d/vendor" 2>/dev/null) == 0x106b && $(cat "$d/device" 2>/dev/null) == 0x1801 ]] && return 0
+  done
+  return 1
+}
+
+# T2 Wi-Fi firmware is Apple's and ships only with macOS. Copy it from the
+# macOS volume now, before the disk is erased; it also enables Wi-Fi here.
+T2_FIRMWARE_STAMP=/run/intent-os-t2-firmware
+fetch_t2_firmware() {
+  is_t2 || return 0
+  say "T2 Mac: copying the Wi-Fi firmware from macOS"
+  touch "$T2_FIRMWARE_STAMP"
+  if ! apple-bcm-firmware-fetcher; then
+    echo "Could not copy the Wi-Fi firmware (is macOS still on this disk?)."
+    echo "Wi-Fi will not work. Use USB Ethernet or a phone (USB tethering) to install."
+  fi
+}
+
+copy_t2_firmware() {
+  [[ -e $T2_FIRMWARE_STAMP ]] || return 0
+  local f
+  while read -r f; do
+    install -Dm644 "$f" "$MNT$f"
+  done < <(find /usr/lib/firmware/brcm -type f -newer "$T2_FIRMWARE_STAMP")
+}
+
 hardware_packages() {
   local product
   [[ -n $HW ]] && { echo "$HW"; return; }
+  is_t2 && { echo intent-os-hw-t2; return; }
   product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
   case $product in
     MacBookAir6,1|MacBookAir6,2) echo intent-os-hw-macbookair6 ;;
@@ -233,6 +266,22 @@ trust_intent_os_key() {
   pacman-key --lsign-key "$fpr" >/dev/null
 }
 
+# Asahi builds m1n1's second stage (m1n1, device trees, U-Boot) into the ESP
+# from a pacman hook. Without a device tree (image build) it finds the ESP at
+# /boot/efi when /boot/efi/.builder exists; on the Mac it finds it by itself.
+prepare_asahi_esp() {
+  mkdir -p "$MNT/boot/efi" "$MNT/efi/m1n1"
+  mount --bind "$MNT/efi" "$MNT/boot/efi"
+  touch "$MNT/efi/.builder"
+}
+
+finish_asahi_esp() {
+  arch-chroot "$MNT" update-m1n1
+  [[ -s $MNT/efi/m1n1/boot.bin ]] || die "update-m1n1 did not write m1n1/boot.bin"
+  rm -f "$MNT/efi/.builder"
+  umount "$MNT/boot/efi"
+}
+
 install_packages() {
   say "Downloading and installing Intent OS"
   local hw conf=$INSTALL_CONF
@@ -245,6 +294,14 @@ install_packages() {
   fi
   trust_intent_os_key
   local packages=(intent-os-base intent-os-session intent-os-update)
+  # Generic arm64 (UTM, UEFI boards) runs Arch Linux ARM's kernel; Apple
+  # silicon gets the Asahi kernel from its hardware package.
+  if [[ $ARCH == aarch64 && $hw != "$APPLE_SILICON" ]]; then
+    packages+=(linux-aarch64 intent-os-bootstrap)
+  elif (( FIRSTBOOT )); then
+    packages+=(intent-os-bootstrap)  # the first-boot PIN and time zone screen
+  fi
+  [[ $hw == "$APPLE_SILICON" ]] && prepare_asahi_esp
   if (( BOOTSTRAP )); then
     packages=(intent-os-bootstrap)
     if [[ $ARCH == aarch64 ]]; then packages+=(linux-aarch64 archlinuxarm-keyring); else packages+=(linux); fi
@@ -262,16 +319,31 @@ install_packages() {
   done
   if (( IMAGE )); then
     # Built in a container: keep every driver, not just the build host's.
+    # Asahi's hook loads the Wi-Fi and other firmware from the ESP.
+    local asahi=""
+    [[ $hw == "$APPLE_SILICON" ]] && asahi=" asahi"
     mkdir -p "$MNT/etc/mkinitcpio.conf.d"
-    echo 'HOOKS=(base udev modconf keyboard keymap consolefont block filesystems)' \
+    echo "HOOKS=(base$asahi udev modconf kms keyboard keymap consolefont block filesystems)" \
       > "$MNT/etc/mkinitcpio.conf.d/zz-intent-os-image.conf"
   fi
+  [[ $hw == "$APPLE_SILICON" ]] && finish_asahi_esp
   genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' >> "$MNT/etc/fstab"
   sed -i 's/compress-force=zstd:15/compress=zstd:1/' "$MNT/etc/fstab"
+  # The Asahi installer grows the root partition; grow the filesystem to match.
+  if [[ $hw == "$APPLE_SILICON" ]]; then
+    sed -i -E '/[[:space:]]\/[[:space:]]+btrfs/ s/(subvol=\/@)/\1,x-systemd.growfs/' "$MNT/etc/fstab"
+  fi
 }
 
 configure_pacman() {
   local conf=$MNT/etc/pacman.conf
+  if [[ $(hardware_packages) == "$APPLE_SILICON" ]]; then
+    # Asahi's kernel, firmware tools and Mesa come before Arch Linux ARM's.
+    # shellcheck disable=SC2016 # pacman expands $arch
+    echo 'Server = https://github.com/asahi-alarm/asahi-alarm/releases/download/$arch' \
+      > "$MNT/etc/pacman.d/mirrorlist.asahi-alarm"
+    sed -i '/^\[core\]/i [asahi-alarm]\nInclude = /etc/pacman.d/mirrorlist.asahi-alarm\n' "$conf"
+  fi
   # x86_64 follows the tested Arch Linux Archive snapshot; Arch Linux ARM has
   # no archive, so aarch64 keeps its normal mirrors.
   if [[ -f /etc/intent-os/mirrorlist ]]; then
@@ -319,6 +391,11 @@ configure_system() {
       cmdline+=" console=ttyS0,115200 console=tty0"
     fi
   fi
+  if [[ $(hardware_packages) == intent-os-hw-t2 ]]; then
+    cmdline+=" intel_iommu=on iommu=pt pm_async=off"
+    # Boot the T2 kernel by default; Arch's kernel stays as a fallback.
+    echo 'GRUB_TOP_LEVEL="/boot/vmlinuz-linux-t2"' >> "$MNT/etc/default/grub"
+  fi
   echo "$HOSTNAME_DEFAULT" > "$MNT/etc/hostname"
   echo "KEYMAP=us" > "$MNT/etc/vconsole.conf"
   echo "LANG=en_US.UTF-8" > "$MNT/etc/locale.conf"
@@ -337,6 +414,8 @@ configure_system() {
 
   local hw_units="" units="greetd fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer"
   [[ $(hardware_packages) == intent-os-hw-macbookair6 ]] && hw_units="intent-os-macbookair6-wakeup.service"
+  [[ $(hardware_packages) == intent-os-hw-t2 ]] && hw_units="t2fanrd.service tiny-dfr.service"
+  [[ $(hardware_packages) == "$APPLE_SILICON" ]] && hw_units="speakersafetyd.service"
   # Bootstrap images enable the rest on first boot, once it is installed.
   (( BOOTSTRAP )) && units="" hw_units=""
 
@@ -354,6 +433,7 @@ passwd -l root
 pacman-key --init
 pacman-key --populate "$keyring"
 [[ -f /usr/share/pacman/keyrings/intent-os.gpg ]] && pacman-key --populate intent-os
+[[ -f /usr/share/pacman/keyrings/asahi-alarm.gpg ]] && pacman-key --populate asahi-alarm
 mkinitcpio -P
 if [[ -f /boot/Image && ! -f /boot/vmlinuz-linux ]]; then ln -f /boot/Image /boot/vmlinuz-linux; fi
 grub-install --target="$grub_target" --efi-directory=/efi --boot-directory=/boot --removable --no-nvram
@@ -432,6 +512,7 @@ main() {
   clear 2>/dev/null || true
   say "Intent OS installer"
   (( IMAGE )) || check_uefi
+  fetch_t2_firmware
   if (( ! AUTO )); then
     setup_network
     pick_disk
@@ -444,6 +525,7 @@ main() {
   online || die "no network connection; the installer downloads Intent OS"
   partition
   install_packages
+  copy_t2_firmware
   configure_system
   (( BOOTSTRAP )) || configure_snapper
   copy_network

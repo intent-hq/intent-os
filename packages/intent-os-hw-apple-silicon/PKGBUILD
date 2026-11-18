@@ -1,0 +1,15 @@
+# Apple silicon Macs (M1, M2) on Asahi Linux: the Asahi kernel, m1n1 and
+# U-Boot boot chain, firmware tools, GPU (Asahi Mesa) and safe speaker audio.
+# Packages come from the asahi-alarm repo. The Apple silicon image installs it.
+pkgname=intent-os-hw-apple-silicon
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS hardware support for Apple silicon Macs (Asahi Linux)"
+arch=(aarch64)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(intent-os-base asahi-meta asahi-audio speakersafetyd mesa)
+
+package() {
+  :
+}
