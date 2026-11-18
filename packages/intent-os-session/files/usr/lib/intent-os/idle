@@ -1,0 +1,9 @@
+#!/bin/bash
+# Lock after 5 min idle and before sleep. On real hardware, also turn the
+# screen off after 10 min. Not in a VM: UTM leaves its window black when the
+# virtual screen turns off, so the device looks asleep and never wakes.
+args=(-w idlehint 300 timeout 300 /usr/bin/intent-os-lock)
+if ! systemd-detect-virt -q; then
+  args+=(timeout 600 'swaymsg "output * power off"' resume 'swaymsg "output * power on"')
+fi
+exec /usr/bin/swayidle "${args[@]}" before-sleep /usr/bin/intent-os-lock
