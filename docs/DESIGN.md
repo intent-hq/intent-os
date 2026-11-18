@@ -67,8 +67,8 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    (`claude auth login`) finishes there, and the window closes when the page returns
    to the CLI. Escape closes it.
 8. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
-   Cmd also acts as Ctrl (`altwin:ctrl_win`), so Cmd+C/X/V and other Mac shortcuts work
-   in Intent. Cmd+Q locks instead of quitting Intent. The power key suspends (it sits next to Delete on the Air).
+   On Apple keyboards Cmd also acts as Ctrl (`altwin:ctrl_win`), so Cmd+C/X/V and other
+   Mac shortcuts work in Intent. Ctrl+Q (Cmd+Q on a Mac) locks instead of quitting Intent. The power key suspends (it sits next to Delete on the Air).
 
 ## 5. Supervision
 
