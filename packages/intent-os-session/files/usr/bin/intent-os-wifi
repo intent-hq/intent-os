@@ -16,6 +16,21 @@ if [[ $(nmcli -t radio wifi 2>/dev/null) != enabled ]]; then
 fi
 
 ssids=() secured=() labels=()
+fuzzel --config=/usr/share/intent-os/fuzzel.ini --dmenu --prompt-only 'Scanning for Wi-Fi networks…' </dev/null >/dev/null &
+scan_notice=$!
+close_scan_notice() {
+  kill "$scan_notice" 2>/dev/null || true
+  wait "$scan_notice" 2>/dev/null || true
+}
+trap close_scan_notice EXIT
+networks=$(nmcli --wait 15 -t -e no -f IN-USE,SIGNAL,SECURITY,SSID dev wifi list --rescan auto 2>/dev/null)
+scan_status=$?
+close_scan_notice
+trap - EXIT
+if (( scan_status != 0 )); then
+  fail "Could not scan for Wi-Fi networks. Try again."
+  exit 1
+fi
 while IFS=: read -r inuse signal security ssid; do
   [[ -z $ssid ]] && continue
   for s in "${ssids[@]}"; do [[ $s == "$ssid" ]] && continue 2; done
@@ -26,7 +41,7 @@ while IFS=: read -r inuse signal security ssid; do
   label+="    ${signal}%"
   [[ ${secured[-1]} == 1 ]] && label+="  ·  secured"
   labels+=("$label")
-done < <(nmcli -t -e no -f IN-USE,SIGNAL,SECURITY,SSID dev wifi list --rescan auto 2>/dev/null)
+done <<< "$networks"
 
 labels+=("Turn Wi-Fi off")
 index=$(printf '%s\n' "${labels[@]}" | menu --index --prompt 'Wi-Fi  ') || exit 0

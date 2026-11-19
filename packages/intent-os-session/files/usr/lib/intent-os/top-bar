@@ -293,7 +293,8 @@ class TopBar(Gtk.Window):
         self.volume.get_parent().set_visible(bool(text))
 
     def peek(self):
-        self.open()
+        self.refresh_volume()
+        self.open(refresh=False)
         self.cancel_close()
         self.close_timer = GLib.timeout_add(PEEK_MS, self.close)
         return True  # keep the signal handler
@@ -314,11 +315,12 @@ class TopBar(Gtk.Window):
             ctx.remove_class("hint")
         return True
 
-    def open(self):
+    def open(self, refresh=True):
         self.cancel_close()
         if self.get_child() is self.bar:
             return
-        self.refresh()
+        if refresh:
+            self.refresh()
         self.remove(self.strip)
         self.add(self.bar)
         self.bar.show_all()
