@@ -272,6 +272,10 @@ menuentry "Intent OS installer (Mac with T2 chip, 2018-2020)" --class arch --cla
 }
 GRUB
     grep -rq vmlinuz-linux-t2 "$profile/grub" || { echo "error: live boot entries still use vmlinuz-linux" >&2; exit 1; }
+    # Apple's EFI text console often stays blank, so GRUB's menu (and the T2
+    # entry) was invisible on Macs. Draw the menu with the graphics terminal.
+    sed -i 's/^\(\s*\)terminal_output console$/\1terminal_output gfxterm/' "$profile/grub/grub.cfg"
+    grep -q 'terminal_output gfxterm' "$profile/grub/grub.cfg" || { echo "error: GRUB menu is not on gfxterm" >&2; exit 1; }
   fi
 
   # Serial console for the QEMU boot test. tty0 comes last so it is the main
