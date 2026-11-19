@@ -32,6 +32,7 @@ I_CHARGING = "\U000f0084"
 I_BATTERY_ALERT = "\U000f0083"  # worn battery: replace it
 I_VOLUME = ["\U000f057f", "\U000f0580", "\U000f057e"]  # low, medium, high
 I_MUTED = "\U000f075f"
+I_BRIGHTNESS = "\U000f00e0"
 I_POWER = "\U000f0425"
 I_MENU = "\U000f035c"
 I_RESTART_INTENT = "\U000f0450"
@@ -284,6 +285,7 @@ class TopBar(Gtk.Window):
         self.awake = self.item(None)
         self.awake.set_text(I_AWAKE)
         self.awake.get_parent().set_tooltip_text("An agent is working: the device stays awake")
+        self.brightness = self.item(None)
         self.volume = self.item(self.toggle_mute)
         volume_box = self.volume.get_parent()
         volume_box.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
@@ -506,7 +508,19 @@ class TopBar(Gtk.Window):
         self.volume.set_text(text)
         self.volume.get_parent().set_visible(bool(text))
 
+    def refresh_brightness(self):
+        text = ""
+        for device in sorted(Path("/sys/class/backlight").glob("*")):
+            level = read_int(device / "actual_brightness")
+            maximum = read_int(device / "max_brightness")
+            if level is not None and maximum:
+                text = f"{I_BRIGHTNESS} {round(100 * level / maximum)}%"
+                break
+        self.brightness.set_text(text)
+        self.brightness.get_parent().set_visible(bool(text))
+
     def peek(self):
+        self.refresh_brightness()
         self.refresh_volume()
         self.open(refresh=False)
         self.cancel_close()
@@ -515,6 +529,7 @@ class TopBar(Gtk.Window):
 
     def refresh(self):
         self.network.set_text(network_text())
+        self.refresh_brightness()
         self.refresh_volume()
         bat = battery_text()
         self.battery.set_text(bat)
@@ -542,6 +557,7 @@ class TopBar(Gtk.Window):
         self.fix_visibility()
 
     def fix_visibility(self):
+        self.brightness.get_parent().set_visible(bool(self.brightness.get_text()))
         self.battery.get_parent().set_visible(bool(self.battery.get_text()))
         self.volume.get_parent().set_visible(bool(self.volume.get_text()))
         self.awake.get_parent().set_visible(os.path.exists(AWAKE))
