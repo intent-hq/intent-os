@@ -248,11 +248,21 @@ CONF
 SigLevel = Optional TrustAll
 Server = file://$WORK/live-repo
 CONF
-    # Boot the live system with the T2 kernel; T2 Macs need IOMMU passthrough.
+    # Boot the live system with the T2 kernel. T2 Macs also need IOMMU
+    # passthrough, which upsets other Macs' Wi-Fi, so only a second menu
+    # entry sets it.
     find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
       \( -name '*.conf' -o -name '*.cfg' \) -exec sed -i \
-      -e 's/vmlinuz-linux\b/vmlinuz-linux-t2/g' -e 's/initramfs-linux\.img/initramfs-linux-t2.img/g' \
-      -e 's/archisosearchuuid=%ARCHISO_UUID%/& intel_iommu=on iommu=pt pm_async=off/' {} +
+      -e 's/vmlinuz-linux\b/vmlinuz-linux-t2/g' -e 's/initramfs-linux\.img/initramfs-linux-t2.img/g' {} +
+    sed -i 's/^menuentry "Arch Linux (%ARCH%, ${archiso_platform})"/menuentry "Intent OS installer"/' "$profile/grub/grub.cfg"
+    cat >> "$profile/grub/grub.cfg" <<'GRUB'
+
+menuentry "Intent OS installer (Mac with T2 chip, 2018-2020)" --class arch --class os --id 't2' {
+    set gfxpayload=keep
+    linux /%INSTALL_DIR%/boot/%ARCH%/vmlinuz-linux-t2 archisobasedir=%INSTALL_DIR% archisosearchuuid=%ARCHISO_UUID% intel_iommu=on iommu=pt pm_async=off
+    initrd /%INSTALL_DIR%/boot/%ARCH%/initramfs-linux-t2.img
+}
+GRUB
     grep -rq vmlinuz-linux-t2 "$profile/grub" || { echo "error: live boot entries still use vmlinuz-linux" >&2; exit 1; }
   fi
 

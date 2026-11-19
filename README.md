@@ -34,7 +34,8 @@ console.
 
 1. In macOS Recovery (hold Cmd+R at start), open **Startup Security Utility**. Set
    **No Security** and **Allow booting from external media**.
-2. Start from the stick (hold **Option**, pick **EFI Boot**). Do not erase macOS first:
+2. Start from the stick (hold **Option**, pick **EFI Boot**), then pick **Intent OS installer
+   (Mac with T2 chip)** in the menu. Do not erase macOS first:
    the installer copies the Wi-Fi firmware from it, then erases the disk.
 3. Continue as on the MacBook Air.
 

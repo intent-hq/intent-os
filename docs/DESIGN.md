@@ -135,7 +135,9 @@ stateDiagram-v2
    packages from the unsigned `arch-mact2` repo into the signed `intent-os` repo, after
    checking each file against the sha256 in that repo's database.
 2. **Installer.** The live ISO boots `linux-t2` on every machine (it is Arch's kernel plus
-   T2 drivers), with `intel_iommu=on iommu=pt pm_async=off`.
+   T2 drivers). A second menu entry, **Mac with T2 chip**, adds `intel_iommu=on iommu=pt
+   pm_async=off`; the default entry leaves them off (they broke the BCM43602 Wi-Fi of a
+   2016 MacBook Pro).
 3. **Wi-Fi firmware** is Apple's and only ships with macOS. On a T2 Mac the installer runs
    `apple-bcm-firmware-fetcher` before it erases the disk, then copies the files to the
    installed system.
