@@ -1,7 +1,7 @@
 # Kiosk session: sway shows only Intent plus a thin top bar with device controls.
 pkgname=intent-os-session
 pkgver=0.1.0
-pkgrel=3
+pkgrel=4
 pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervision"
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
@@ -10,8 +10,12 @@ license=(Apache-2.0)
 depends=(intent-os-base intent-appimage sway swayidle hyprlock swaylock greetd xorg-xwayland brightnessctl fuzzel playerctl jq inter-font ttf-nerd-fonts-symbols-mono wireplumber networkmanager python-gobject gtk3 gtk-layer-shell)
 # Capture the Wayland screen or selected area and copy the PNG to the clipboard.
 depends+=(grim slurp wl-clipboard)
+# Map Command shortcuts on Apple keyboards at the Linux input layer.
+depends+=(keyd)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
   chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
+  install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
+  ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
 }
