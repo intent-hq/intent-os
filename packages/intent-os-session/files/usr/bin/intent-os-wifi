@@ -4,7 +4,8 @@
 # reports failures in a swaynag bar. Needs no terminal.
 set -u
 
-menu() { fuzzel --config=/usr/share/intent-os/fuzzel.ini --dmenu "$@"; }
+placement=("$@")
+menu() { fuzzel --config=/usr/share/intent-os/fuzzel.ini --dmenu "${placement[@]}" "$@"; }
 fail() { swaynag -t warning -m "$1" >/dev/null 2>&1 & }
 
 pgrep -x fuzzel >/dev/null && exit 0
@@ -16,7 +17,7 @@ if [[ $(nmcli -t radio wifi 2>/dev/null) != enabled ]]; then
 fi
 
 ssids=() secured=() labels=()
-fuzzel --config=/usr/share/intent-os/fuzzel.ini --dmenu --prompt-only 'Scanning for Wi-Fi networks…' </dev/null >/dev/null &
+fuzzel --config=/usr/share/intent-os/fuzzel.ini --dmenu "${placement[@]}" --prompt-only 'Scanning for Wi-Fi networks…' </dev/null >/dev/null &
 scan_notice=$!
 close_scan_notice() {
   kill "$scan_notice" 2>/dev/null || true
