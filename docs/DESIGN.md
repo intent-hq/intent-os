@@ -42,6 +42,7 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
        intent.service      Intent, supervised
        intent-os-idle      lock after 5 min idle and before sleep
        intent-os-top-bar   hover the top edge: network, battery, clock, restart Intent, restart, power
+       intent-os-windows   each new Intent window gets its own workspace
 ```
 
 1. **sway, not cage.** The PIN lock needs `ext-session-lock`, which cage lacks.
@@ -71,6 +72,15 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    bar has a volume item: click mutes, scrolling changes the volume.
    Ctrl+Cmd+Q locks. Cmd+C/X/V copy, cut and paste in Intent, terminal included, and
    Ctrl keeps its usual meaning (Intent handles Super+C/X/V on Linux). The power key suspends (it sits next to Delete on the Air).
+   Cmd+Left/Right (keyd sends Super+Left/Right) go to the previous/next Intent window.
+10. **One workspace per window.** `intent-os-windows` follows sway window events. The
+   first Intent window stays on workspace 1; each new tiled Intent window (for example a
+   tab opened in its own window) moves to the workspace after the highest one in use, and
+   gets focus. So Super+Left/Right (`workspace prev/next_on_output`) step through the
+   windows in creation order. Floating dialogs stay where they open. sway removes
+   empty workspaces. The QEMU boot test opens a second window with Ctrl+Shift+N and
+   checks the placement and both keys; `intent-os-test-report` prints the sway state
+   to the serial console, only when QEMU passes `opt/intent-os/test`.
 
 9. **Stay awake while agents work.** `intent-os-keep-awake` asks the local intentd for
    mid-turn agents (`agent.listActive` on its Unix socket) every 20 s. While one is

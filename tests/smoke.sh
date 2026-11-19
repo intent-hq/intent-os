@@ -3,7 +3,10 @@
 #   1. Boot the ISO and run the unattended installer onto a blank disk.
 #   2. Boot the installed disk; wait until Intent's window is on screen.
 #   3. Take a screenshot of the lock screen, type the PIN, take another.
-# Artifacts: install.log, boot.log, locked.png, unlocked.png, result.txt, and
+#   4. Open a second Intent window (Ctrl+Shift+N): it must get workspace 2.
+#      Super+Left/Right must move between the two windows.
+# Artifacts: install.log, boot.log, locked.png, unlocked.png, windows.png,
+# result.txt, and
 # install-latest.png / boot-latest.png (last per-minute screenshot).
 # Needs: qemu-system-x86_64, OVMF, socat, /dev/kvm.
 set -euo pipefail
@@ -107,7 +110,10 @@ grep -q INTENT_OS_INSTALL_OK "$OUT/install.log" || fail "installer did not repor
 echo "== Booting the installed system"
 MON=$OUT/monitor.sock
 rm -f "$MON"
+# opt/intent-os/test turns on intent-os-test-report, which prints the window
+# placement (INTENT_OS_WINDOWS focused=<ws> intent=<ws,...>;) to the serial log.
 "$QEMU" "${common[@]}" \
+  -fw_cfg "name=opt/intent-os/test,string=1" \
   -serial "file:$OUT/boot.log" \
   -monitor "unix:$MON,server,nowait" &
 QEMU_PID=$!
@@ -124,10 +130,12 @@ screenshot() {
 # Keep the connection open briefly: QEMU drops a command whose client hangs up at once.
 monitor() { { echo "$1"; sleep 2; } | socat - "UNIX-CONNECT:$MON" >/dev/null; }
 
+# wait_for <pattern> <seconds> [byte offset]: only log text after the offset counts.
 wait_for() {
-  local pattern=$1 seconds=$2
+  local pattern=$1 seconds=$2 from=${3:-0}
   while (( seconds-- > 0 )); do
-    grep -q "$pattern" "$OUT/boot.log" 2>/dev/null && return 0
+    # Not a pipe: with pipefail, grep -q exiting early can fail tail with SIGPIPE.
+    grep -q "$pattern" < <(tail -c "+$((from + 1))" "$OUT/boot.log" 2>/dev/null) && return 0
     kill -0 "$QEMU_PID" 2>/dev/null || return 1
     sleep 1
   done
@@ -146,6 +154,33 @@ done
 (( booted )) || { wait_for INTENT_OS_BOOT_OK $((240 * slow)) && booted=1; }
 sleep $((15 * slow))
 screenshot unlocked
+
+log_size() { stat -c %s "$OUT/boot.log"; }
+# press <qemu key> <expected INTENT_OS_WINDOWS state> <seconds>
+press() {
+  local from
+  from=$(log_size)
+  monitor "sendkey $1"
+  wait_for "INTENT_OS_WINDOWS $2;" "$3" "$from"
+}
+windows_error=""
+if (( booted )); then
+  echo "== Two Intent windows"
+  if ! wait_for 'INTENT_OS_WINDOWS focused=1 intent=1;' $((60 * slow)); then
+    windows_error="first Intent window not reported on workspace 1"
+  # Retry once: Intent can still be loading its first window's page.
+  elif ! press ctrl-shift-n 'focused=2 intent=1,2' $((90 * slow)) &&
+       ! press ctrl-shift-n 'focused=2 intent=1,2' $((90 * slow)); then
+    windows_error="Ctrl+Shift+N did not put a second Intent window on workspace 2"
+  elif ! press meta_l-left 'focused=1 intent=1,2' $((30 * slow)); then
+    windows_error="Super+Left did not go to workspace 1"
+  elif ! press meta_l-right 'focused=2 intent=1,2' $((30 * slow)); then
+    windows_error="Super+Right did not go to workspace 2"
+  fi
+  sleep $((5 * slow))
+  screenshot windows
+  echo "-- windows: $(grep -ao 'INTENT_OS_WINDOWS [^;]*;' "$OUT/boot.log" | tr '\n' ' ')"
+fi
 # Quit QEMU directly: Intent OS maps the power button to suspend, so an ACPI
 # power-down would leave the VM asleep and the test waiting forever.
 monitor "quit" || kill "$QEMU_PID" 2>/dev/null || true
@@ -160,4 +195,5 @@ ls -l "$OUT"/*.png 2>/dev/null || echo "warning: no screenshots were saved"
 (( booted )) || fail "Intent window never appeared (no INTENT_OS_BOOT_OK on serial)"
 grep -q "INTENT_OS_BOOT_OK tz=/usr/share/zoneinfo/$TZ_UNDER_TEST" "$OUT/boot.log" ||
   fail "time zone not set to $TZ_UNDER_TEST ($(grep -ao 'INTENT_OS_BOOT_OK tz=[^ ]*' "$OUT/boot.log" | head -n1))"
-result "PASS: installed, booted, Intent window visible, time zone kept"
+[[ -z $windows_error ]] || fail "$windows_error (see windows.png, boot.log)"
+result "PASS: installed, booted, Intent window visible, time zone kept, two windows on workspaces 1 and 2, Super+Left/Right switch"

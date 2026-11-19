@@ -41,6 +41,11 @@ bindsym Mod4+Shift+3 exec intent-os-screenshot
 bindsym Mod4+Shift+4 exec intent-os-screenshot region
 bindsym Print exec intent-os-screenshot
 bindsym Shift+Print exec intent-os-screenshot region
+# Each Intent window has its own workspace, in creation order (intent-os-windows).
+# Super+Left/Right (Cmd+Left/Right on Apple keyboards) go to the previous/next one.
+workspace_auto_back_and_forth no
+bindsym Mod4+Left workspace prev_on_output
+bindsym Mod4+Right workspace next_on_output
 
 
 exec /usr/lib/intent-os/session-start
