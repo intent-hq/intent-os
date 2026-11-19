@@ -5,9 +5,12 @@ It takes no space. A 2 px strip waits at the top edge; when the pointer
 touches it, the bar opens on top of Intent and closes once the pointer
 leaves it. The menu button opens the device actions.
 """
+import json
 import os
+from pathlib import Path
 import signal as unix_signal
 import subprocess
+import struct
 import time
 
 import gi
@@ -96,6 +99,42 @@ def output(*cmd):
     except (OSError, subprocess.TimeoutExpired):
         return ""
 
+def app_version(archive):
+    with archive.open("rb") as file:
+        _, header_size, _, json_size = struct.unpack("<4I", file.read(16))
+        if not 0 < json_size <= header_size <= 32 * 1024 * 1024:
+            return ""
+        package = json.loads(file.read(json_size))["files"]["package.json"]
+        if not 0 < package["size"] <= 1024 * 1024:
+            return ""
+        file.seek(8 + header_size + int(package["offset"]))
+        return json.loads(file.read(package["size"]))["version"]
+
+
+def versions():
+    try:
+        os_version = Path("/var/lib/intent-os/applied-build").read_text().strip()
+    except OSError:
+        os_version = ""
+    if not os_version:
+        os_version = output("pacman", "-Q", "intent-os-session").partition(" ")[2].strip()
+    app = daemon = ""
+    pid = output("pgrep", "-o", "-u", str(os.getuid()), "-x", "intent").strip()
+    if pid.isdecimal():
+        try:
+            exe = Path(f"/proc/{pid}/exe").resolve(strict=True)
+            app = app_version(exe.parent / "resources/app.asar")
+        except (OSError, ValueError, KeyError, TypeError, struct.error):
+            pass
+    try:
+        pid = (Path.home() / ".local/share/intentd/intentd.pid").read_text().strip()
+        if pid.isdecimal():
+            exe = Path(f"/proc/{pid}/exe").resolve(strict=True)
+            if exe.name == "intentd":
+                daemon = output(str(exe), "--version").strip().removeprefix("intentd ")
+    except OSError:
+        pass
+    return os_version, app, daemon
 
 
 
@@ -235,7 +274,11 @@ class TopBar(Gtk.Window):
         mark.get_style_context().add_class("brand-mark")
         brand.pack_start(mark, False, False, 0)
         brand.pack_start(Gtk.Label(label="IntentOS"), False, False, 0)
-        self.bar.pack_start(brand, False, False, 0)
+        brand_button = Gtk.EventBox()
+        brand_button.add(brand)
+        brand_button.get_style_context().add_class("button")
+        brand_button.connect("button-press-event", lambda *_: self.open_versions())
+        self.bar.pack_start(brand_button, False, False, 0)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.network = self.item(self.open_wifi)
         self.awake = self.item(None)
@@ -278,6 +321,21 @@ class TopBar(Gtk.Window):
         self.power_item(I_POWER, "Shut down", lambda: self.ask(
             "Shut down this device?", "Shut down", ["systemctl", "poweroff"]))
         self.undo = self.power_item(I_UNDO, "Undo update", self.confirm_undo)
+        self.active_menu = None
+        self.version_menu = Gtk.Popover.new(brand_button)
+        self.version_menu.set_modal(False)
+        self.version_menu.set_position(Gtk.PositionType.BOTTOM)
+        self.version_menu.set_constrain_to(Gtk.PopoverConstraint.NONE)
+        self.version_menu.get_style_context().add_class("power-menu")
+        self.version_menu.connect("closed", self.power_closed)
+        grid = Gtk.Grid(column_spacing=16, row_spacing=6, margin=12)
+        self.version_values = []
+        for row, name in enumerate(("Intent OS", "Intent app", "intentd")):
+            grid.attach(Gtk.Label(label=name, xalign=0), 0, row, 1, 1)
+            value = Gtk.Label(xalign=0, selectable=True)
+            grid.attach(value, 1, row, 1, 1)
+            self.version_values.append(value)
+        self.version_menu.add(grid)
 
         # Confirmations replace the bar's contents in place (a separate swaynag
         # bar collided with this overlay and pushed it down the screen).
@@ -339,8 +397,19 @@ class TopBar(Gtk.Window):
         return box
 
     def open_power(self):
-        if self.power_menu.get_visible():
+        self.undo.set_visible(last_update_date() is not None)
+        return self.open_menu(self.power_menu)
+
+    def open_versions(self):
+        if self.active_menu is None:
+            for label, version in zip(self.version_values, versions()):
+                label.set_text(version or "Unavailable")
+        return self.open_menu(self.version_menu)
+
+    def open_menu(self, menu):
+        if self.active_menu is not None:
             return self.dismiss_power()
+        self.active_menu = menu
         self.cancel_close()
         self.remove(self.bar)
         self.power_surface.pack_start(self.bar, False, False, 0)
@@ -348,15 +417,16 @@ class TopBar(Gtk.Window):
         self.power_surface.show_all()
         self.fix_visibility()
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
-        self.power_box.show_all()
-        self.undo.set_visible(last_update_date() is not None)
-        self.power_menu.popup()
+        menu.get_child().show_all()
+        if menu is self.power_menu:
+            self.undo.set_visible(last_update_date() is not None)
+        menu.popup()
         return True
 
     def dismiss_power(self):
-        if not self.power_menu.get_visible():
+        if self.active_menu is None:
             return False
-        self.power_menu.popdown()
+        self.active_menu.popdown()
         return True
 
     def power_item(self, icon, label, action):
@@ -376,6 +446,7 @@ class TopBar(Gtk.Window):
         return button
 
     def power_closed(self, _menu):
+        self.active_menu = None
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, False)
         self.power_surface.remove(self.bar)
         self.back_to_bar()
@@ -487,7 +558,7 @@ class TopBar(Gtk.Window):
             self.close_timer = 0
 
     def close(self):
-        if holding() or self.asking or self.power_menu.get_visible():
+        if holding() or self.asking or self.active_menu is not None:
             return True  # check again once the menu or question closes
         self.close_timer = 0
         if self.get_child() is not self.strip:
