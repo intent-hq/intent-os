@@ -3,7 +3,7 @@
 
 It takes no space. A 2 px strip waits at the top edge; when the pointer
 touches it, the bar opens on top of Intent and closes once the pointer
-leaves it. The Power button opens the device actions.
+leaves it. The menu button opens the device actions.
 """
 import os
 import signal as unix_signal
@@ -30,6 +30,11 @@ I_BATTERY_ALERT = "\U000f0083"  # worn battery: replace it
 I_VOLUME = ["\U000f057f", "\U000f0580", "\U000f057e"]  # low, medium, high
 I_MUTED = "\U000f075f"
 I_POWER = "\U000f0425"
+I_MENU = "\U000f035c"
+I_RESTART_INTENT = "\U000f0450"
+I_REBOOT = "\U000f0709"
+I_SLEEP = "\U000f04b2"
+I_UNDO = "\U000f02da"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
 LAST_UPDATE = "/var/lib/intent-os/last-update"
@@ -42,6 +47,8 @@ window { background: transparent; }
 .button { padding: 0 8px; color: #a1a1aa; border-radius: 6px; }
 .button:hover, .item.clickable:hover { background: #27272a; color: #fafafa; }
 .hint { color: #fbbf24; }
+popover.power-menu { background: #18181b; color: #d4d4d8; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
+.power-menu .button { padding: 6px 10px; }
 """
 
 
@@ -211,25 +218,27 @@ class TopBar(Gtk.Window):
         gap = Gtk.Box()
         gap.set_size_request(8, -1)
         self.bar.pack_start(gap, False, False, 0)
-        self.power = self.text_button(self.bar, self.open_power, I_POWER)
-        self.power.set_tooltip_text("Power")
+        self.power = self.text_button(self.bar, self.open_power, I_MENU)
+        self.power.set_tooltip_text("Device actions")
         edge = Gtk.Box()
         edge.set_size_request(6, -1)
         self.bar.pack_start(edge, False, False, 0)
 
-        self.power_box = Gtk.Box(spacing=4, name="bar")
-        self.power_box.set_size_request(-1, HEIGHT)
-        self.power_box.pack_start(Gtk.Box(), True, True, 0)
-        self.text_button(self.power_box, lambda: self.power_action(
-            "systemctl", "--user", "restart", "intent.service"), "Restart Intent")
-        self.text_button(self.power_box, lambda: self.power_action(
-            "systemctl", "suspend"), "Sleep")
-        self.reboot = self.text_button(self.power_box, lambda: self.ask(
-            "Restart this device?", "Restart", ["systemctl", "reboot"]), "Restart device")
-        self.text_button(self.power_box, lambda: self.ask(
-            "Shut down this device?", "Shut down", ["systemctl", "poweroff"]), "Shut down")
-        self.undo = self.text_button(self.power_box, self.confirm_undo, "Undo update")
-        self.text_button(self.power_box, self.back_to_bar, "Cancel")
+        self.power_menu = Gtk.Popover.new(self.power)
+        self.power_menu.set_position(Gtk.PositionType.BOTTOM)
+        self.power_menu.set_constrain_to(Gtk.PopoverConstraint.NONE)
+        self.power_menu.get_style_context().add_class("power-menu")
+        self.power_menu.connect("closed", self.power_closed)
+        self.power_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin=4)
+        self.power_menu.add(self.power_box)
+        self.power_item(I_RESTART_INTENT, "Restart Intent", lambda: run(
+            "systemctl", "--user", "restart", "intent.service"))
+        self.power_item(I_SLEEP, "Sleep", lambda: run("systemctl", "suspend"))
+        self.reboot = self.power_item(I_REBOOT, "Restart device", lambda: self.ask(
+            "Restart this device?", "Restart", ["systemctl", "reboot"]))
+        self.power_item(I_POWER, "Shut down", lambda: self.ask(
+            "Shut down this device?", "Shut down", ["systemctl", "poweroff"]))
+        self.undo = self.power_item(I_UNDO, "Undo update", self.confirm_undo)
 
         # Confirmations replace the bar's contents in place (a separate swaynag
         # bar collided with this overlay and pushed it down the screen).
@@ -292,20 +301,35 @@ class TopBar(Gtk.Window):
 
     def open_power(self):
         self.cancel_close()
-        self.remove(self.bar)
-        self.add(self.power_box)
         self.power_box.show_all()
         self.undo.set_visible(last_update_date() is not None)
+        self.power_menu.popup()
+
+    def power_item(self, icon, label, action):
+        button = Gtk.Button()
+        button.set_relief(Gtk.ReliefStyle.NONE)
+        button.get_style_context().add_class("button")
+        row = Gtk.Box(spacing=10)
+        row.pack_start(Gtk.Label(label=icon), False, False, 0)
+        row.pack_start(Gtk.Label(label=label, xalign=0), True, True, 0)
+        button.add(row)
+        def activate(_button):
+            self.power_menu.popdown()
+            action()
+
+        button.connect("clicked", activate)
+        self.power_box.pack_start(button, False, False, 0)
+        return button
+
+    def power_closed(self, _menu):
+        self.cancel_close()
+        self.close_timer = GLib.timeout_add(CLOSE_DELAY_MS, self.close)
 
     def back_to_bar(self):
         self.remove(self.get_child())
         self.add(self.bar)
         self.bar.show_all()
         self.fix_visibility()
-
-    def power_action(self, *command):
-        self.back_to_bar()
-        run(*command)
 
     def ask(self, message, label, command):
         self.asking = command
@@ -405,7 +429,7 @@ class TopBar(Gtk.Window):
             self.close_timer = 0
 
     def close(self):
-        if holding() or self.asking:
+        if holding() or self.asking or self.power_menu.get_visible():
             return True  # check again once the menu or question closes
         self.close_timer = 0
         if self.get_child() is not self.strip:
