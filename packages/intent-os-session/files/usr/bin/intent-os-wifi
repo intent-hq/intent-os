@@ -16,7 +16,7 @@ if [[ $(nmcli -t radio wifi 2>/dev/null) != enabled ]]; then
   exit 0
 fi
 
-ssids=() secured=() labels=()
+ssids=() secured=() labels=() profiles=()
 fuzzel --config=/usr/share/intent-os/fuzzel.ini --dmenu "${placement[@]}" --prompt-only 'Scanning for Wi-Fi networks…' </dev/null >/dev/null &
 scan_notice=$!
 close_scan_notice() {
@@ -32,15 +32,36 @@ if (( scan_status != 0 )); then
   fail "Could not scan for Wi-Fi networks. Try again."
   exit 1
 fi
+saved_ssids=() saved_uuids=()
+while IFS=: read -r uuid type; do
+  [[ $type == 802-11-wireless ]] || continue
+  saved_ssid=$(nmcli -g 802-11-wireless.ssid -e no connection show uuid "$uuid" 2>/dev/null) || continue
+  [[ -n $saved_ssid ]] || continue
+  saved_ssids+=("$saved_ssid")
+  saved_uuids+=("$uuid")
+done < <(nmcli -t -f UUID,TYPE connection show 2>/dev/null)
+
 while IFS=: read -r inuse signal security ssid; do
   [[ -z $ssid ]] && continue
   for s in "${ssids[@]}"; do [[ $s == "$ssid" ]] && continue 2; done
   ssids+=("$ssid")
+  profile=
+  for i in "${!saved_ssids[@]}"; do
+    if [[ ${saved_ssids[i]} == "$ssid" ]]; then
+      profile=${saved_uuids[i]}
+      break
+    fi
+  done
+  profiles+=("$profile")
   secured+=("$([[ -n $security && $security != -- ]] && echo 1 || echo 0)")
   label="$ssid"
   [[ $inuse == '*' ]] && label="● $label"
   label+="    ${signal}%"
-  [[ ${secured[-1]} == 1 ]] && label+="  ·  secured"
+  if [[ -n $profile ]]; then
+    label+="  ·  saved"
+  elif [[ ${secured[-1]} == 1 ]]; then
+    label+="  ·  secured"
+  fi
   labels+=("$label")
 done <<< "$networks"
 
@@ -54,8 +75,8 @@ if (( index == ${#ssids[@]} )); then
 fi
 
 ssid=${ssids[$index]}
-if nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq -- "$ssid"; then
-  nmcli connection up id "$ssid" >/dev/null 2>&1 || fail "Could not connect to $ssid."
+if [[ -n ${profiles[$index]} ]]; then
+  nmcli connection up uuid "${profiles[$index]}" >/dev/null 2>&1 || fail "Could not connect to $ssid."
   exit 0
 fi
 
