@@ -32,6 +32,7 @@ console.
 
 The interface uses Inter. Touchpad clicks require a physical press; tap-to-click
 is disabled by default.
+The companion is off by default; owners can enable it in Intent.
 
 ## Install on an Intel Mac with the T2 chip (2018–2020)
 
