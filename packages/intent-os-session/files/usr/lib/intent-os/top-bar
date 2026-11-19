@@ -38,6 +38,7 @@ I_MENU = "\U000f035c"
 I_RESTART_INTENT = "\U000f0450"
 I_REBOOT = "\U000f0709"
 I_SLEEP = "\U000f04b2"
+I_LOCK = "\U000f033e"
 I_UNDO = "\U000f02da"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
@@ -317,6 +318,7 @@ class TopBar(Gtk.Window):
         self.power_menu.add(self.power_box)
         self.power_item(I_RESTART_INTENT, "Restart Intent", lambda: run(
             "systemctl", "--user", "restart", "intent.service"))
+        self.power_item(I_LOCK, "Lock", lambda: run("/usr/bin/intent-os-lock"))
         self.power_item(I_SLEEP, "Sleep", lambda: run("systemctl", "suspend"))
         self.reboot = self.power_item(I_REBOOT, "Restart device", lambda: self.ask(
             "Restart this device?", "Restart", ["systemctl", "reboot"]))
