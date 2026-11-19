@@ -323,7 +323,13 @@ class TopBar(Gtk.Window):
 
     def power_closed(self, _menu):
         self.cancel_close()
-        self.close_timer = GLib.timeout_add(CLOSE_DELAY_MS, self.close)
+        self.close_timer = GLib.idle_add(self.close_after_menu)
+
+    def close_after_menu(self):
+        self.close_timer = 0
+        if not self.asking and not self.power_menu.get_visible() and not holding():
+            self.close()
+        return GLib.SOURCE_REMOVE
 
     def back_to_bar(self):
         self.remove(self.get_child())
