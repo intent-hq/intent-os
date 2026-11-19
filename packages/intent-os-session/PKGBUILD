@@ -18,4 +18,5 @@ package() {
   chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
   install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
   ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
+  ln -s ../intent-os-low-power.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-os-low-power.service"
 }

@@ -1,0 +1,49 @@
+#!/bin/bash
+set -euo pipefail
+
+turbo=/sys/devices/system/cpu/intel_pstate/no_turbo
+enabled=/var/lib/intent-os/low-power-enabled
+saved=/run/intent-os-low-power-turbo
+[[ -w $turbo ]] || exit 0
+exec 9>/run/intent-os-low-power.lock
+flock 9
+
+case ${1:-} in
+    toggle)
+        if [[ -e $enabled ]]; then
+            rm -f "$enabled"
+        else
+            install -d /var/lib/intent-os
+            touch "$enabled"
+        fi
+        ;;
+    apply) ;;
+    *) exit 2 ;;
+esac
+
+on_battery() {
+    local supply
+    for supply in /sys/class/power_supply/*; do
+        if [[ -r $supply/online && $(<"$supply/online") == 1 ]]; then
+            return 1
+        fi
+    done
+    for supply in /sys/class/power_supply/*; do
+        if [[ -r $supply/type && $(<"$supply/type") == Battery &&
+              -r $supply/status && $(<"$supply/status") == Discharging ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+if [[ -e $enabled ]] && on_battery; then
+    current=$(<"$turbo")
+    if [[ $current == 0 ]]; then
+        [[ -e $saved ]] || printf '%s\n' "$current" > "$saved"
+        printf '1\n' > "$turbo"
+    fi
+elif [[ -e $saved ]]; then
+    cat "$saved" > "$turbo"
+    rm -f "$saved"
+fi

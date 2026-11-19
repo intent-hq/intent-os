@@ -37,11 +37,14 @@ I_POWER = "\U000f0425"
 I_MENU = "\U000f035c"
 I_RESTART_INTENT = "\U000f0450"
 I_REBOOT = "\U000f0709"
+I_LOW_POWER = "\U000f124d"
 I_SLEEP = "\U000f04b2"
 I_LOCK = "\U000f033e"
 I_UNDO = "\U000f02da"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
+LOW_POWER_ENABLED = Path("/var/lib/intent-os/low-power-enabled")
+TURBO_CONTROL = Path("/sys/devices/system/cpu/intel_pstate/no_turbo")
 LAST_UPDATE = "/var/lib/intent-os/last-update"
 PEEK_MS = 1500
 
@@ -320,6 +323,8 @@ class TopBar(Gtk.Window):
             "systemctl", "--user", "restart", "intent.service"))
         self.power_item(I_LOCK, "Lock", lambda: run("/usr/bin/intent-os-lock"))
         self.power_item(I_SLEEP, "Sleep", lambda: run("systemctl", "suspend"))
+        self.low_power = self.power_item(I_LOW_POWER, "Low Power Mode", lambda: run(
+            "sudo", "-n", "/usr/lib/intent-os/low-power", "toggle"))
         self.reboot = self.power_item(I_REBOOT, "Restart device", lambda: self.ask(
             "Restart this device?", "Restart", ["systemctl", "reboot"]))
         self.power_item(I_POWER, "Shut down", lambda: self.ask(
@@ -424,6 +429,10 @@ class TopBar(Gtk.Window):
         menu.get_child().show_all()
         if menu is self.power_menu:
             self.undo.set_visible(last_update_date() is not None)
+            self.low_power.set_visible(TURBO_CONTROL.is_file())
+            label = self.low_power.get_child().get_children()[1]
+            enabled = LOW_POWER_ENABLED.exists()
+            label.set_text("Low Power Mode (On)" if enabled else "Low Power Mode (Off)")
         menu.popup()
         return True
 

@@ -1,0 +1,7 @@
+[Unit]
+Description=Apply Intent OS Low Power Mode
+After=systemd-udev-trigger.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/intent-os/low-power apply
