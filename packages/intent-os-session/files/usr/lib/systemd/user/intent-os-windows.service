@@ -1,0 +1,10 @@
+[Unit]
+Description=Intent OS window placement (one workspace per Intent window)
+PartOf=intent-os-session.target
+# Up before Intent, so windows that Intent restores at start are placed too.
+Before=intent.service
+
+[Service]
+ExecStart=/usr/lib/intent-os/windows
+Restart=always
+RestartSec=2

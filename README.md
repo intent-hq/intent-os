@@ -39,7 +39,8 @@ Press **Cmd+Shift+4** (or **Shift+Print Screen**) to select and copy an area.
 
 On supported MacBook Air keyboards, Command acts like Ctrl for most shortcuts. **Cmd+C/V/X**
 still copy, paste, and cut in Intent. **Cmd+Shift+V** pastes as plain text in
-the composer. **Ctrl+Cmd+Q** locks the screen.
+the composer. **Ctrl+Cmd+Q** locks the screen. Each Intent window fills the screen;
+**Cmd+Left** and **Cmd+Right** go to the previous and next window.
 
 ## Install on an Intel Mac with the T2 chip (2018–2020)
 
