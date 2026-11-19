@@ -7,6 +7,8 @@ set -u
 app="$HOME/.local/lib/intent-os/Intent.AppImage"
 # Intent's menu bar stays hidden (Alt shows it); shortcuts keep working.
 export INTENT_HIDE_MENU_BAR=1
+# There is no system browser: Intent opens every web link in its own browser panel.
+export INTENT_NO_SYSTEM_BROWSER=1
 child="" stopping=0
 trap 'stopping=1; [[ -n $child ]] && kill -TERM "$child" 2>/dev/null' TERM INT
 
