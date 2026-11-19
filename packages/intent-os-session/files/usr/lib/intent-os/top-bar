@@ -59,7 +59,7 @@ window { background: transparent; }
 #bar, popover.power-menu { color: @content; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
 #bar { background: @canvas; border-bottom: 1px solid @edge; }
 .brand { margin-left: 12px; font-weight: 600; }
-.brand-mark { background-repeat: no-repeat; background-position: center; background-size: 16px; }
+.brand-mark { background-repeat: no-repeat; background-position: center; background-size: 16px; background-image: url("/usr/share/intent-os/intent-mark-lime.svg"); }
 .item { padding: 0 8px; color: @muted; }
 .button, .item.clickable { border-radius: 5px; }
 .button { padding: 0 8px; color: @content; }
@@ -76,9 +76,7 @@ def style_bar(settings, provider):
     names = ("canvas", "surface", "content", "muted", "hover", "edge", "accent")
     colors = PALETTES["dark" if dark else "light"]
     tokens = "".join(f"@define-color {name} {value};\n" for name, value in zip(names, colors))
-    mark = "white" if dark else "black"
-    brand = f'.brand-mark {{ background-image: url("/usr/share/intent-os/intent-mark-{mark}.svg"); }}'
-    provider.load_from_data((tokens + CSS + brand).encode())
+    provider.load_from_data((tokens + CSS).encode())
 
 
 # Menus and prompts opened from the bar (Wi-Fi picker, confirmations). The bar
