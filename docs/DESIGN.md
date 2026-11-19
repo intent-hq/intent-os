@@ -87,6 +87,14 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    working and the device is on power, a logind inhibitor blocks sleep, the lid and the
    suspend key; it is released when every agent is idle or the power is unplugged.
    Agents on remote machines do not count. The top bar shows a coffee icon meanwhile.
+10. **Passkeys.** Intent's browser panel signs in with passkeys on its own (Intent's
+   `intent-passkey` helper; this repo adds only OS parts). A phone signs in over a QR
+   code and Bluetooth LE, so `bluez` runs (`bluetooth.service`; skipped when there is no
+   adapter). Device passkeys are confirmed with the PIN through PAM service
+   `intent-passkey` (same stack as the lock screen); Intent offers them only when
+   `/etc/pam.d/intent-passkey` exists. With no TPM, those keys are on disk, encrypted
+   with a key made from the PIN: a stolen disk allows offline PIN guessing, so a long
+   PIN is safer.
 
 ## 5. Supervision
 
@@ -148,6 +156,7 @@ stateDiagram-v2
 | Brightness | `intel_backlight` and `smc::kbd_backlight` through brightnessctl. |
 | Fan | SMC firmware control. `mbpfan` not included (AUR only). |
 | Camera | FaceTime HD through `facetimehd` (DKMS, built in CI). Its firmware is Apple's: on first boot with a network, `intent-os-facetimehd-firmware` downloads 2.7 MB of Apple's OS X 10.11.5 update, extracts and checks it. |
+| Bluetooth | Broadcom BCM20702 (USB, `btusb`), Bluetooth 4.0 LE, through BlueZ. Used for phone passkeys (FIDO hybrid). |
 | Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
 ## 7a. Intel Macs with the T2 chip (2018–2020)
