@@ -59,7 +59,7 @@ window { background: transparent; }
 #bar, popover.power-menu { color: @content; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
 #bar { background: @canvas; border-bottom: 1px solid @edge; }
 .brand { margin-left: 12px; font-weight: 600; }
-.brand-mark { background-repeat: no-repeat; background-position: center; background-size: 16px; background-image: url("/usr/share/intent-os/intent-mark-lime.svg"); }
+.brand-mark { background-color: #161616; border-radius: 5px; background-repeat: no-repeat; background-position: center; background-size: 16px; background-image: url("/usr/share/intent-os/intent-mark-lime.svg"); }
 .item { padding: 0 8px; color: @muted; }
 .button, .item.clickable { border-radius: 5px; }
 .button { padding: 0 8px; color: @content; }
@@ -273,7 +273,8 @@ class TopBar(Gtk.Window):
         brand = Gtk.Box(spacing=6)
         brand.get_style_context().add_class("brand")
         mark = Gtk.Box()
-        mark.set_size_request(16, 16)
+        mark.set_size_request(22, 22)
+        mark.set_valign(Gtk.Align.CENTER)
         mark.get_style_context().add_class("brand-mark")
         brand.pack_start(mark, False, False, 0)
         brand.pack_start(Gtk.Label(label="IntentOS"), False, False, 0)
