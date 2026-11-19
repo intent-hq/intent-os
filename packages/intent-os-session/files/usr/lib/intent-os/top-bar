@@ -40,16 +40,33 @@ AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake
 LAST_UPDATE = "/var/lib/intent-os/last-update"
 PEEK_MS = 1500
 
-CSS = b"""
+# Semantic colors from https://intentapp.dev/design-system.md
+PALETTES = {
+    "light": ("#f0f0eb", "#ffffff", "#080808", "#525250", "#e1e1de", "#e5e5e5", "#717453"),
+    "dark": ("#161616", "#272727", "#f0f0eb", "#babab7", "#3d3d3c", "#3d3d3c", "#ddec61"),
+}
+
+CSS = """
 window { background: transparent; }
-#bar { background: #0b0b0c; color: #d4d4d8; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
-.item { padding: 0 9px; }
-.button { padding: 0 8px; color: #a1a1aa; border-radius: 6px; }
-.button:hover, .item.clickable:hover { background: #27272a; color: #fafafa; }
-.hint { color: #fbbf24; }
-popover.power-menu { background: #18181b; color: #d4d4d8; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
-.power-menu .button { padding: 6px 10px; }
+#bar, popover.power-menu { color: @content; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
+#bar { background: @canvas; border-bottom: 1px solid @edge; }
+.item { padding: 0 8px; color: @muted; }
+.button, .item.clickable { border-radius: 5px; }
+.button { padding: 0 8px; color: @content; }
+.button:hover, .item.clickable:hover { background: @hover; color: @content; }
+.hint { color: @accent; }
+popover.power-menu { background: @surface; border: 1px solid @edge; border-radius: 10px; }
+.power-menu .button { padding: 5px 10px; }
 """
+
+
+def style_bar(settings, provider):
+    dark = settings.get_property("gtk-application-prefer-dark-theme")
+    dark = dark or "dark" in settings.get_property("gtk-theme-name").lower()
+    names = ("canvas", "surface", "content", "muted", "hover", "edge", "accent")
+    colors = PALETTES["dark" if dark else "light"]
+    tokens = "".join(f"@define-color {name} {value};\n" for name, value in zip(names, colors))
+    provider.load_from_data((tokens + CSS).encode())
 
 
 # Menus and prompts opened from the bar (Wi-Fi picker, confirmations). The bar
@@ -198,7 +215,10 @@ class TopBar(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
 
         provider = Gtk.CssProvider()
-        provider.load_from_data(CSS)
+        settings = self.get_settings()
+        style_bar(settings, provider)
+        for name in ("gtk-application-prefer-dark-theme", "gtk-theme-name"):
+            settings.connect(f"notify::{name}", lambda *_: style_bar(settings, provider))
         Gtk.StyleContext.add_provider_for_screen(
             self.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
