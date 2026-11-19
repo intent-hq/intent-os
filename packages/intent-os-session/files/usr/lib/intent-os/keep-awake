@@ -13,6 +13,8 @@ import time
 
 SOCKET = os.path.expanduser("~/.local/share/intentd/intentd.sock")
 POLL_SECONDS = 20
+# The top bar shows a coffee icon while this file exists.
+MARKER = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
 
 
 def on_power():
@@ -48,6 +50,10 @@ def agents_busy():
 
 def main():
     inhibitor = None
+    try:
+        os.remove(MARKER)  # left over from a crash
+    except OSError:
+        pass
     while True:
         want = on_power() and agents_busy()
         if want and inhibitor is None:
@@ -55,11 +61,16 @@ def main():
                 "systemd-inhibit", "--what=sleep:handle-lid-switch:handle-suspend-key",
                 "--who=Intent", "--why=An agent is working", "--mode=block",
                 "sleep", "infinity"])
+            open(MARKER, "w").close()
             print("intent-os: an agent is working; keeping the device awake", flush=True)
         elif not want and inhibitor is not None:
             inhibitor.terminate()
             inhibitor.wait()
             inhibitor = None
+            try:
+                os.remove(MARKER)
+            except OSError:
+                pass
             print("intent-os: agents idle or on battery; sleep allowed", flush=True)
         time.sleep(POLL_SECONDS)
 

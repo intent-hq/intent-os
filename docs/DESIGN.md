@@ -76,7 +76,7 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    mid-turn agents (`agent.listActive` on its Unix socket) every 20 s. While one is
    working and the device is on power, a logind inhibitor blocks sleep, the lid and the
    suspend key; it is released when every agent is idle or the power is unplugged.
-   Agents on remote machines do not count.
+   Agents on remote machines do not count. The top bar shows a coffee icon meanwhile.
 
 ## 5. Supervision
 

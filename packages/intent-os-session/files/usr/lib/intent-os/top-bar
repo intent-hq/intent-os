@@ -34,6 +34,8 @@ I_POWER = "\U000f0425"
 I_VOLUME = ["\U000f057f", "\U000f0580", "\U000f057e"]  # low, medium, high
 I_MUTED = "\U000f075f"
 I_UNDO = "\U000f02da"  # history
+I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
+AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
 LAST_UPDATE = "/var/lib/intent-os/last-update"
 PEEK_MS = 1500
 
@@ -203,6 +205,9 @@ class TopBar(Gtk.Window):
         self.bar.set_size_request(-1, HEIGHT)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.network = self.item(lambda: run("intent-os-wifi", hold=True))
+        self.awake = self.item(None)
+        self.awake.set_text(I_AWAKE)
+        self.awake.get_parent().set_tooltip_text("An agent is working: the device stays awake")
         self.volume = self.item(self.toggle_mute)
         volume_box = self.volume.get_parent()
         volume_box.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
@@ -301,6 +306,7 @@ class TopBar(Gtk.Window):
         self.battery.get_parent().set_visible(bool(bat))
         self.clock.set_text(time.strftime("%a %-d %b  %H:%M"))
         self.undo.set_visible(last_update_date() is not None)
+        self.awake.get_parent().set_visible(os.path.exists(AWAKE))
         ctx = self.reboot.get_style_context()
         if os.path.exists("/run/intent-os/reboot-required"):
             ctx.add_class("hint")
@@ -319,6 +325,7 @@ class TopBar(Gtk.Window):
         self.battery.get_parent().set_visible(bool(self.battery.get_text()))
         self.volume.get_parent().set_visible(bool(self.volume.get_text()))
         self.undo.set_visible(last_update_date() is not None)
+        self.awake.get_parent().set_visible(os.path.exists(AWAKE))
 
     def on_leave(self, _widget, event):
         # Moving onto a child of the bar is not leaving it.
