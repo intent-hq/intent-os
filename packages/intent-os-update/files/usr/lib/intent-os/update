@@ -52,6 +52,11 @@ fi
 if [[ $(cat "$STATE/applied-build" 2>/dev/null) == "$build" && ! -e $STATE/retry ]]; then
   exit 0
 fi
+# The owner undid this build (top bar): wait for a newer one.
+if [[ $(cat "$STATE/skip-build" 2>/dev/null) == "$build" ]]; then
+  log "build $build was undone; waiting for a newer build"
+  exit 0
+fi
 
 log "updating to $date (build $build)"
 # Arch Linux ARM has no archive; aarch64 keeps its normal mirrors.
@@ -60,10 +65,17 @@ if [[ $(uname -m) == x86_64 ]]; then
   printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$date" > "$MIRRORLIST"
 fi
 touch "$STATE/retry"
+# One snapshot pair around the whole update, so the top bar can undo it.
+pre=$(snapper -c root create -t pre -p -c number -d "Before Intent OS update $build" 2>/dev/null || true)
 keyring=archlinux-keyring
 [[ $(uname -m) == aarch64 ]] && keyring=archlinuxarm-keyring
 pacman -Sy --noconfirm --needed "$keyring"
 pacman -Su --noconfirm
+if [[ -n $pre ]]; then
+  post=$(snapper -c root create -t post --pre-number "$pre" -p -c number -d "After Intent OS update $build")
+  printf 'PRE=%s\nPOST=%s\nBUILD=%s\nDATE=%s\n' "$pre" "$post" "$build" "$(date '+%a %-d %b %H:%M')" \
+    > "$STATE/last-update"
+fi
 echo "$build" > "$STATE/applied-build"
 rm -f "$STATE/retry"
 log "done"

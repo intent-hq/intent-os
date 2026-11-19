@@ -1,3 +1,3 @@
 [Unit]
 Description=Intent OS session
-Wants=intent.service intent-os-idle.service intent-os-top-bar.service
+Wants=intent.service intent-os-idle.service intent-os-top-bar.service intent-os-keep-awake.service

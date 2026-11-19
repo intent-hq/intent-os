@@ -1,0 +1,8 @@
+[Unit]
+Description=Keep the device awake while a local agent works (on power)
+PartOf=intent-os-session.target
+
+[Service]
+ExecStart=/usr/lib/intent-os/keep-awake
+Restart=always
+RestartSec=5

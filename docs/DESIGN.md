@@ -66,9 +66,17 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    (`--open-url=`), which shows them in a small sign-in window. A CLI sign-in
    (`claude auth login`) finishes there, and the window closes when the page returns
    to the CLI. Escape closes it.
-8. **Keys:** brightness, keyboard backlight, and volume keys work, also when locked.
+8. **Keys:** brightness, keyboard backlight, volume and play/pause/next/previous keys work,
+   also when locked; volume and brightness briefly show the top bar, and F3 shows it. The
+   bar has a volume item: click mutes, scrolling changes the volume.
    Ctrl+Cmd+Q locks. Cmd+C/X/V copy, cut and paste in Intent, terminal included, and
    Ctrl keeps its usual meaning (Intent handles Super+C/X/V on Linux). The power key suspends (it sits next to Delete on the Air).
+
+9. **Stay awake while agents work.** `intent-os-keep-awake` asks the local intentd for
+   mid-turn agents (`agent.listActive` on its Unix socket) every 20 s. While one is
+   working and the device is on power, a logind inhibitor blocks sleep, the lid and the
+   suspend key; it is released when every agent is idle or the power is unplugged.
+   Agents on remote machines do not count.
 
 ## 5. Supervision
 
@@ -109,7 +117,11 @@ stateDiagram-v2
 5. **Intent** is not part of the OS update. It updates its own AppImage, which the
    owner's account owns, and asks before it restarts. Running agents are never stopped
    by an OS update.
-6. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
+6. **Undo.** The update wraps itself in a snapper pre/post pair and records it in
+   `/var/lib/intent-os/last-update`. The top bar then shows an undo icon; after a
+   confirmation, `undo-update` runs `snapper undochange pre..post`, skips that build until
+   a newer one is published, and restarts.
+7. **Reboot hint.** A pacman hook marks `/run/intent-os/reboot-required` after kernel,
    firmware, systemd, glibc, Mesa, sway, or Wi-Fi driver updates. A dot on **Restart**
    shows it. The device never reboots by itself for an update.
 

@@ -1,0 +1,18 @@
+#!/bin/bash
+# Undo the last Intent OS update: revert every file it changed (snapper
+# undochange between the update's pre and post snapshots), skip that build
+# until a newer one is published, and restart. Run as root (the top bar uses
+# sudo; the owner has passwordless sudo).
+set -euo pipefail
+STATE=/var/lib/intent-os
+[[ -r $STATE/last-update ]] || { echo "No update to undo." >&2; exit 1; }
+PRE="" POST="" BUILD=""
+# shellcheck disable=SC1091
+. "$STATE/last-update"
+[[ $PRE =~ ^[0-9]+$ && $POST =~ ^[0-9]+$ ]] || { echo "Bad update record." >&2; exit 1; }
+echo "intent-os: undoing build $BUILD (snapshots $PRE..$POST)"
+snapper -c root undochange "$PRE..$POST"
+echo "$BUILD" > "$STATE/skip-build"
+rm -f "$STATE/last-update" "$STATE/applied-build" /run/intent-os/reboot-required
+sync
+systemctl reboot

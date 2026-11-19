@@ -1,0 +1,68 @@
+#!/usr/bin/python3
+"""Keep the device awake while an agent on this device is mid-turn and the
+device is on power. Sleep, the lid and the power key are blocked through a
+logind inhibitor, released once every agent is idle or the power is
+unplugged. Agents on remote machines do not count: this asks the local
+intentd (agent.listActive over its Unix socket)."""
+import glob
+import json
+import os
+import socket
+import subprocess
+import time
+
+SOCKET = os.path.expanduser("~/.local/share/intentd/intentd.sock")
+POLL_SECONDS = 20
+
+
+def on_power():
+    mains = [p for p in glob.glob("/sys/class/power_supply/*") if read(f"{p}/type") == "Mains"]
+    # No mains supply at all (desktop, VM): treat as plugged in.
+    return not mains or any(read(f"{p}/online") == "1" for p in mains)
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def agents_busy():
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(5)
+            s.connect(SOCKET)
+            s.sendall(b'{"jsonrpc":"2.0","id":1,"method":"agent.listActive","params":{}}\n')
+            buf = b""
+            while b"\n" not in buf:
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+        return bool(json.loads(buf.split(b"\n")[0])["result"]["streams"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def main():
+    inhibitor = None
+    while True:
+        want = on_power() and agents_busy()
+        if want and inhibitor is None:
+            inhibitor = subprocess.Popen([
+                "systemd-inhibit", "--what=sleep:handle-lid-switch:handle-suspend-key",
+                "--who=Intent", "--why=An agent is working", "--mode=block",
+                "sleep", "infinity"])
+            print("intent-os: an agent is working; keeping the device awake", flush=True)
+        elif not want and inhibitor is not None:
+            inhibitor.terminate()
+            inhibitor.wait()
+            inhibitor = None
+            print("intent-os: agents idle or on battery; sleep allowed", flush=True)
+        time.sleep(POLL_SECONDS)
+
+
+if __name__ == "__main__":
+    main()
