@@ -1,0 +1,106 @@
+#!/usr/bin/python3
+from collections import Counter
+import os
+from pathlib import Path
+import sqlite3
+import time
+
+SYS = Path("/sys/class")
+TICKS = os.sysconf("SC_CLK_TCK")
+
+
+def number(path):
+    try:
+        return int(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def supply_type(path):
+    try:
+        return (path / "type").read_text().strip()
+    except OSError:
+        return ""
+
+
+def processes():
+    result = {}
+    for path in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            prefix, fields = path.read_text(errors="replace").rsplit(")", 1)
+            fields = fields.split()
+            result[(path.parent.name, fields[19])] = (
+                prefix.split("(", 1)[1], int(fields[11]) + int(fields[12])
+            )
+        except (OSError, ValueError, IndexError):
+            continue
+    return result
+
+
+db = sqlite3.connect("/var/lib/intent-energy/energy.sqlite3")
+db.executescript("""
+CREATE TABLE IF NOT EXISTS samples (
+    id INTEGER PRIMARY KEY, unix_time INTEGER NOT NULL, interval_seconds REAL,
+    on_ac INTEGER, battery_percent INTEGER, battery_watts REAL,
+    brightness_percent REAL, cpu_package_watts REAL
+);
+CREATE TABLE IF NOT EXISTS process_cpu (
+    sample_id INTEGER NOT NULL REFERENCES samples(id),
+    name TEXT NOT NULL, cpu_seconds REAL NOT NULL,
+    PRIMARY KEY(sample_id, name)
+);
+""")
+supplies = sorted((SYS / "power_supply").glob("*"))
+battery = next((path for path in supplies if supply_type(path) == "Battery"), None)
+chargers = [path / "online" for path in supplies if supply_type(path) != "Battery"]
+backlight = next(iter(sorted((SYS / "backlight").glob("*"))), None)
+rapl = SYS / "powercap/intel-rapl:0"
+previous = {}
+last_time = last_energy = None
+
+while True:
+    now = time.clock_gettime(time.CLOCK_BOOTTIME)
+    elapsed = now - last_time if last_time is not None else None
+    current = processes()
+    usage = Counter()
+    if elapsed is not None and elapsed < 90:
+        for identity, (name, ticks) in current.items():
+            if identity in previous:
+                delta = ticks - previous[identity][1]
+                if delta > 0:
+                    usage[name] += delta / TICKS
+
+    online = [value for path in chargers if (value := number(path)) is not None]
+    ac = int(any(online)) if online else None
+    percent = number(battery / "capacity") if battery else None
+    draw = None
+    if battery and ac == 0:
+        power = number(battery / "power_now")
+        volts = number(battery / "voltage_now")
+        amps = number(battery / "current_now")
+        if power is not None:
+            draw = abs(power) / 1e6
+        elif volts is not None and amps is not None:
+            draw = abs(volts * amps) / 1e12
+    level = number(backlight / "actual_brightness") if backlight else None
+    maximum = number(backlight / "max_brightness") if backlight else None
+    brightness = 100 * level / maximum if level is not None and maximum else None
+    energy = number(rapl / "energy_uj")
+    package_power = None
+    if energy is not None and last_energy is not None and elapsed and elapsed < 90:
+        delta = energy - last_energy
+        if delta < 0:
+            delta += number(rapl / "max_energy_range_uj") or 0
+        if delta >= 0:
+            package_power = delta / 1e6 / elapsed
+
+    with db:
+        sample = db.execute(
+            "INSERT INTO samples VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)",
+            (int(time.time()), elapsed, ac, percent, draw,
+             brightness, package_power),
+        ).lastrowid
+        db.executemany("INSERT INTO process_cpu VALUES (?, ?, ?)",
+                       ((sample, name, seconds) for name, seconds in usage.most_common(15)))
+    previous, last_time, last_energy = current, now, energy
+    time.sleep(max(0, 60 - (time.clock_gettime(time.CLOCK_BOOTTIME) - now)))

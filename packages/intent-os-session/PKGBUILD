@@ -1,7 +1,7 @@
 # Kiosk session: sway shows only Intent plus a thin top bar with device controls.
 pkgname=intent-os-session
 pkgver=0.1.0
-pkgrel=5
+pkgrel=6
 pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervision"
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
@@ -12,10 +12,13 @@ depends=(intent-os-base intent-appimage sway swayidle hyprlock swaylock greetd x
 depends+=(grim slurp wl-clipboard)
 # Map Command shortcuts on Apple keyboards at the Linux input layer.
 depends+=(keyd)
+# Record local battery and CPU diagnostics in SQLite via Python's standard library.
+depends+=(python)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
   chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
   install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
   ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
+  ln -s ../intent-energy-log.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-energy-log.service"
 }

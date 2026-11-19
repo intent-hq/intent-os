@@ -1,0 +1,14 @@
+[Unit]
+Description=Local Intent OS battery and CPU log
+
+[Service]
+ExecStart=/usr/lib/intent-os/energy-log
+StateDirectory=intent-energy
+StateDirectoryMode=0700
+UMask=0077
+Nice=10
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
