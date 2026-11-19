@@ -1,0 +1,25 @@
+#!/bin/bash
+# Boot test only: when QEMU passes opt/intent-os/test (fw_cfg), print the
+# focused sway workspace and the workspaces that hold Intent windows to the
+# serial console on each change, so tests/smoke.sh can check window placement.
+# On a real device there is no such fw_cfg entry and this exits at once.
+set -u
+modprobe -q qemu_fw_cfg 2>/dev/null || true
+[[ -r /sys/firmware/qemu_fw_cfg/by_name/opt/intent-os/test/raw ]] || exit 0
+last=""
+while sleep 1; do
+  sock=$(compgen -G '/run/user/*/sway-ipc.*.sock' | head -n1) || continue
+  tree=$(swaymsg -s "$sock" -r -t get_tree 2>/dev/null) || continue
+  line=$(jq -r '
+    [.. | objects | select(.type? == "workspace" and (.num // -1) >= 0)] as $ws
+    | ($ws | map(select(any(.. | objects; .focused? == true))) | first | .num // "none") as $f
+    | ($ws | map(select(any(.. | objects | select(.pid? != null);
+        ((.app_id // "") | test("intent"; "i"))
+        or ((.window_properties.class // "") | test("intent"; "i")))) | .num)
+        | sort | map(tostring) | join(",")) as $i
+    | "INTENT_OS_WINDOWS focused=\($f) intent=\($i);"' <<<"$tree") || continue
+  [[ $line == "$last" ]] && continue
+  last=$line
+  echo "$line"
+  echo "<2>$line" 2>/dev/null >/dev/kmsg || true
+done

@@ -1,7 +1,7 @@
 # Kiosk session: sway shows only Intent plus a thin top bar with device controls.
 pkgname=intent-os-session
 pkgver=0.1.0
-pkgrel=5
+pkgrel=6
 pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervision"
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
@@ -18,4 +18,6 @@ package() {
   chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
   install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
   ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
+  # Boot test only; it exits at once unless QEMU passes opt/intent-os/test.
+  ln -s ../intent-os-test-report.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-os-test-report.service"
 }

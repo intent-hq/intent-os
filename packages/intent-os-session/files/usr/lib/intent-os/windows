@@ -1,0 +1,30 @@
+#!/bin/bash
+# Give each new Intent window its own sway workspace, after the last one, so
+# Super+Left/Right (workspace prev/next) step through the windows in creation
+# order. The first Intent window stays where it opens (workspace 1). Floating
+# windows (dialogs) stay on their workspace. sway removes empty workspaces.
+set -u
+is_intent='((.app_id // "") | test("intent"; "i"))
+  or ((.window_properties.class // "") | test("intent"; "i"))'
+
+place() {
+  local id=$1 target
+  # The number after the highest workspace that holds another Intent window;
+  # empty when this is the only Intent window.
+  target=$(swaymsg -r -t get_tree | jq -r --argjson id "$id" "
+    [.. | objects | select(.type? == \"workspace\" and (.num // -1) >= 0)
+        | {num, ids: [.. | objects | select(.type? == \"con\" and .pid? != null)
+                         | select($is_intent) | .id]}
+        | select(any(.ids[]; . != \$id)) | .num]
+    | if length > 0 then max + 1 else empty end")
+  [[ -n $target ]] || return 0
+  swaymsg -q "[con_id=$id] move container to workspace number $target; workspace number $target" ||
+    echo "intent-os-windows: could not move window $id to workspace $target" >&2
+}
+
+swaymsg -r -m -t subscribe '["window"]' |
+  jq --unbuffered -r "select(.change == \"new\") | .container
+    | select(.type == \"con\") | select($is_intent) | .id" |
+  while read -r id; do
+    place "$id"
+  done
