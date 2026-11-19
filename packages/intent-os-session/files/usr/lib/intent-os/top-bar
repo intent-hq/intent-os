@@ -225,10 +225,17 @@ class TopBar(Gtk.Window):
         self.bar.pack_start(edge, False, False, 0)
 
         self.power_menu = Gtk.Popover.new(self.power)
+        self.power_menu.set_modal(False)
         self.power_menu.set_position(Gtk.PositionType.BOTTOM)
         self.power_menu.set_constrain_to(Gtk.PopoverConstraint.NONE)
         self.power_menu.get_style_context().add_class("power-menu")
         self.power_menu.connect("closed", self.power_closed)
+        self.power_surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        dismiss_area = Gtk.EventBox()
+        dismiss_area.set_visible_window(False)
+        dismiss_area.connect("button-press-event", lambda *_: self.dismiss_power())
+        self.power_surface.pack_end(dismiss_area, True, True, 0)
+        self.bar.connect("button-press-event", lambda *_: self.dismiss_power())
         self.power_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin=4)
         self.power_menu.add(self.power_box)
         self.power_item(I_RESTART_INTENT, "Restart Intent", lambda: run(
@@ -300,10 +307,25 @@ class TopBar(Gtk.Window):
         return box
 
     def open_power(self):
+        if self.power_menu.get_visible():
+            return self.dismiss_power()
         self.cancel_close()
+        self.remove(self.bar)
+        self.power_surface.pack_start(self.bar, False, False, 0)
+        self.add(self.power_surface)
+        self.power_surface.show_all()
+        self.fix_visibility()
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
         self.power_box.show_all()
         self.undo.set_visible(last_update_date() is not None)
         self.power_menu.popup()
+        return True
+
+    def dismiss_power(self):
+        if not self.power_menu.get_visible():
+            return False
+        self.power_menu.popdown()
+        return True
 
     def power_item(self, icon, label, action):
         button = Gtk.Button()
@@ -322,14 +344,12 @@ class TopBar(Gtk.Window):
         return button
 
     def power_closed(self, _menu):
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, False)
+        self.power_surface.remove(self.bar)
+        self.back_to_bar()
+        self.resize(1, HEIGHT)
         self.cancel_close()
-        self.close_timer = GLib.idle_add(self.close_after_menu)
-
-    def close_after_menu(self):
-        self.close_timer = 0
-        if not self.asking and not self.power_menu.get_visible() and not holding():
-            self.close()
-        return GLib.SOURCE_REMOVE
+        self.close_timer = GLib.timeout_add(CLOSE_DELAY_MS, self.close)
 
     def back_to_bar(self):
         self.remove(self.get_child())
