@@ -33,7 +33,7 @@ I_POWER = "\U000f0425"
 
 CSS = b"""
 window { background: transparent; }
-#bar { background: #0b0b0c; color: #d4d4d8; font: 10pt "Noto Sans", "Symbols Nerd Font Mono"; }
+#bar { background: #0b0b0c; color: #d4d4d8; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
 .item { padding: 0 9px; }
 .button { padding: 0 8px; color: #a1a1aa; border-radius: 6px; }
 .button:hover, .item.clickable:hover { background: #27272a; color: #fafafa; }

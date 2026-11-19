@@ -30,6 +30,13 @@ down); click the network name to change Wi-Fi. Cmd+C/X/V copy, cut and paste, al
 Intent; their sign-in pages open in a small Intent window. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
+The interface uses Inter. Touchpad clicks require a physical press; tap-to-click
+is disabled by default.
+The companion is off by default; owners can enable it in Intent.
+
+Press **Cmd+Shift+3** (or **Print Screen**) to copy a screenshot to the clipboard.
+Press **Cmd+Shift+4** (or **Shift+Print Screen**) to select and copy an area.
+
 ## Install on an Intel Mac with the T2 chip (2018–2020)
 
 1. In macOS Recovery (hold Cmd+R at start), open **Startup Security Utility**. Set

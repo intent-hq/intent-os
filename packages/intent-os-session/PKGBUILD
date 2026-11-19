@@ -1,12 +1,15 @@
 # Kiosk session: sway shows only Intent plus a thin top bar with device controls.
 pkgname=intent-os-session
 pkgver=0.1.0
-pkgrel=1
+pkgrel=3
 pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervision"
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
 license=(Apache-2.0)
-depends=(intent-os-base intent-appimage sway swayidle hyprlock swaylock greetd xorg-xwayland brightnessctl fuzzel jq ttf-nerd-fonts-symbols-mono wireplumber networkmanager python-gobject gtk3 gtk-layer-shell)
+# Inter supplies the session UI font; Noto in the base retains script coverage.
+depends=(intent-os-base intent-appimage sway swayidle hyprlock swaylock greetd xorg-xwayland brightnessctl fuzzel jq inter-font ttf-nerd-fonts-symbols-mono wireplumber networkmanager python-gobject gtk3 gtk-layer-shell)
+# Capture the Wayland screen or selected area and copy the PNG to the clipboard.
+depends+=(grim slurp wl-clipboard)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
