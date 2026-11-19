@@ -29,6 +29,7 @@ I_CHARGING = "\U000f0084"
 I_BATTERY_ALERT = "\U000f0083"  # worn battery: replace it
 I_VOLUME = ["\U000f057f", "\U000f0580", "\U000f057e"]  # low, medium, high
 I_MUTED = "\U000f075f"
+I_POWER = "\U000f0425"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
 LAST_UPDATE = "/var/lib/intent-os/last-update"
@@ -210,7 +211,8 @@ class TopBar(Gtk.Window):
         gap = Gtk.Box()
         gap.set_size_request(8, -1)
         self.bar.pack_start(gap, False, False, 0)
-        self.power = self.text_button(self.bar, self.open_power, "Power")
+        self.power = self.text_button(self.bar, self.open_power, I_POWER)
+        self.power.set_tooltip_text("Power")
         edge = Gtk.Box()
         edge.set_size_request(6, -1)
         self.bar.pack_start(edge, False, False, 0)
