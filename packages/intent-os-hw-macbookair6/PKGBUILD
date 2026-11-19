@@ -1,6 +1,6 @@
 # MacBook Air 6,1 (11-inch) and 6,2 (13-inch): Mid 2013 and Early 2014.
 # Haswell HD 5000 graphics (Mesa crocus), Broadcom BCM4360 Wi-Fi (wl),
-# Cirrus CS4208 audio, bcm5974 trackpad. The installer adds this package
+# Cirrus CS4208 audio, bcm5974 trackpad, FaceTime HD camera (facetimehd). The installer adds this package
 # when DMI product_name matches.
 pkgname=intent-os-hw-macbookair6
 pkgver=0.1.0
@@ -10,7 +10,8 @@ arch=(x86_64)
 url="https://github.com/intent-hq/intent-os"
 license=(Apache-2.0)
 # Arch ships the wl driver only as DKMS; it rebuilds on each kernel update.
-depends=(intent-os-base linux linux-headers broadcom-wl-dkms libva-intel-driver)
+# facetimehd-dkms: the FaceTime HD camera; its Apple firmware downloads on first boot.
+depends=(intent-os-base linux linux-headers broadcom-wl-dkms libva-intel-driver facetimehd-dkms curl xz cpio)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"

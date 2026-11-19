@@ -86,7 +86,8 @@ no tested snapshot like the x86_64 build.
 | `packages/intent-os-base` | Base system: kernel, btrfs + snapper, network, audio, owner tools |
 | `packages/intent-os-session` | sway kiosk, PIN lock, top bar with device controls, Intent supervision |
 | `packages/intent-os-update` | Staged idle-time updates and restart hints |
-| `packages/intent-os-hw-macbookair6` | MacBook Air 6,x: Broadcom Wi-Fi, wake fix, video decode |
+| `packages/intent-os-hw-macbookair6` | MacBook Air 6,x: Broadcom Wi-Fi, wake fix, video decode, FaceTime HD camera |
+| `packages/facetimehd-dkms` | FaceTime HD camera driver (from the AUR package) |
 | `packages/intent-os-hw-apple-silicon` | Apple silicon (M1, M2) on Asahi Linux: kernel, m1n1/U-Boot, GPU, speakers |
 | `asahi/install.sh` | macOS script that runs the Asahi installer with the Intent OS image |
 | `packages/intent-os-hw-t2` | Intel Macs with the T2 chip (2018–2020): t2linux kernel, Wi-Fi firmware, audio, fans, Touch Bar |

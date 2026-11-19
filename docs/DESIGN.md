@@ -137,7 +137,7 @@ stateDiagram-v2
 | Audio | Cirrus CS4208 through PipeWire. |
 | Brightness | `intel_backlight` and `smc::kbd_backlight` through brightnessctl. |
 | Fan | SMC firmware control. `mbpfan` not included (AUR only). |
-| Camera | Not supported (needs out-of-tree `facetimehd`). |
+| Camera | FaceTime HD through `facetimehd` (DKMS, built in CI). Its firmware is Apple's: on first boot with a network, `intent-os-facetimehd-firmware` downloads 2.7 MB of Apple's OS X 10.11.5 update, extracts and checks it. |
 | Memory | 4 GB or 8 GB. zram swap at half of RAM. Run agents remotely on 4 GB models. |
 
 ## 7a. Intel Macs with the T2 chip (2018–2020)

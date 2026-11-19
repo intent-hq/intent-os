@@ -16,7 +16,7 @@ ARCH=$(uname -m)
 ARCHISO_REF=v92
 PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-bootstrap)
 if [[ $ARCH == x86_64 ]]; then
-  PACKAGES+=(intent-os-hw-macbookair6 intent-os-hw-t2)
+  PACKAGES+=(facetimehd-dkms intent-os-hw-macbookair6 intent-os-hw-t2)
 else
   PACKAGES+=(intent-os-hw-apple-silicon)
 fi
@@ -105,9 +105,9 @@ build_packages() {
   for p in "${PACKAGES[@]}"; do
     cp -r "$SRC/packages/$p" "$WORK/pkgbuild/$p"
     # Each build gets a newer version (0.1.0.<build time>), so installed devices
-    # upgrade only the Intent OS packages that pacman sees as new. intent-appimage
-    # keeps the upstream Intent version.
-    [[ $p == intent-appimage ]] ||
+    # upgrade only the Intent OS packages that pacman sees as new. Repackaged
+    # upstream software (intent-appimage, facetimehd-dkms) keeps its version.
+    [[ $p == intent-appimage || $p == facetimehd-dkms ]] ||
       sed -i "s/^pkgver=\(.*\)$/pkgver=\1.${BUILD_ID%%-*}/" "$WORK/pkgbuild/$p/PKGBUILD"
     chown -R builder "$WORK/pkgbuild/$p"
     (cd "$WORK/pkgbuild/$p" &&

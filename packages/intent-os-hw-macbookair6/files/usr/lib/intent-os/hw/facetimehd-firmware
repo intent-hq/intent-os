@@ -1,0 +1,24 @@
+#!/bin/bash
+# FaceTime HD camera firmware is Apple's and may not be redistributed. Fetch
+# the camera driver from Apple's OS X 10.11.5 update (a 2.7 MB byte range of
+# the 723 MB image), extract the firmware, check it, and load the driver.
+# Method and checksums: github.com/patjak/facetimehd-firmware (AUR package).
+set -euo pipefail
+dest=/usr/lib/firmware/facetimehd/firmware.bin
+[[ -s $dest ]] && exit 0
+url=https://updates.cdn-apple.com/2019/cert/041-88431-20191011-e7ee7d98-2878-4cd9-bc0a-d98b3a1e24b1/OSXUpd10.11.5.dmg
+range=204909802-207733123
+file=System/Library/Extensions/AppleCameraInterface.kext/Contents/MacOS/AppleCameraInterface
+fw_sha=e3e6034a67dfdaa27672dd547698bbc5b33f47f1fc7f5572a2fb68ea09d32d3d
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+cd "$tmp"
+curl -fsSL --retry 3 -r "$range" "$url" | xzcat -qq -Q | cpio --format odc -i -d "./$file" >/dev/null 2>&1 || true
+[[ -s $file ]] || { echo "facetimehd: could not download Apple's camera driver" >&2; exit 1; }
+dd bs=1 skip=81920 count=603715 if="$file" of=firmware.bin.gz status=none
+gunzip firmware.bin.gz
+echo "$fw_sha  firmware.bin" | sha256sum -c --quiet -
+install -Dm644 firmware.bin "$dest"
+echo "facetimehd: firmware installed"
+modprobe -r facetimehd 2>/dev/null || true
+modprobe facetimehd || true
