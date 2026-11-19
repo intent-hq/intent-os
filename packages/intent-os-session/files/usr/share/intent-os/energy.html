@@ -13,6 +13,8 @@ section { background: light-dark(#fff,#272727); padding: 16px; border-radius: 10
 svg { display: block; width: 100%; height: auto; overflow: visible; }
 svg text { fill: currentColor; font-size: 12px; }
 .trace { fill: none; stroke: light-dark(#717453,#ddec61); stroke-width: 2; }
+.rate { color: light-dark(#175ca8,#80baff); }
+path.rate { stroke: currentColor; }
 .grid { stroke: currentColor; opacity: .15; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 0; }
@@ -58,24 +60,49 @@ function chart(samples, [key, label, unit, floor], end) {
     card.append(empty);
     return card;
   }
-  heading.textContent += ` · ${(values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)} ${unit} average`;
+  const charge = key === 'battery_percent';
+  if (!charge)
+    heading.textContent += ` · ${(values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)} ${unit} average`;
   const top = Math.max(floor, Math.ceil(Math.max(...values)));
-  const svg = element('svg', {viewBox: '0 0 660 140', role: 'img', 'aria-label': label + ' over the last 24 hours'});
-  for (const y of [12, 112]) svg.append(element('line', {x1: 52, x2: 648, y1: y, y2: y, class: 'grid'}));
+  const right = charge ? 575 : 648;
+  const svg = element('svg', {viewBox: '0 0 660 140', role: 'img',
+    'aria-label': label + (charge ? ' and change in percentage points per minute' : '') + ' over the last 24 hours'});
+  for (const y of [12, 112]) svg.append(element('line', {x1: 52, x2: right, y1: y, y2: y, class: 'grid'}));
   svg.append(element('text', {x: 0, y: 16}, `${top} ${unit}`), element('text', {x: 0, y: 116}, '0'));
-  svg.append(element('text', {x: 52, y: 136}, '24 hours ago'), element('text', {x: 648, y: 136, 'text-anchor': 'end'}, 'Now'));
-  let path = '', previous = null;
-  for (const sample of samples) {
-    const value = sample[key];
-    if (!Number.isFinite(value)) { previous = null; continue; }
-    const x = 52 + 596 * (sample.unix_time - end + 86400) / 86400;
-    const y = 112 - 100 * value / top;
-    path += `${previous !== null && sample.unix_time - previous < 120 ? 'L' : 'M'}${x} ${y}`;
-    if (previous === null || sample.unix_time - previous >= 120)
-      svg.append(element('circle', {cx: x, cy: y, r: 2, fill: 'currentColor'}));
-    previous = sample.unix_time;
+  svg.append(element('text', {x: 52, y: 136}, '24 hours ago'), element('text', {x: right, y: 136, 'text-anchor': 'end'}, 'Now'));
+
+  function plot(readings, yFor, style) {
+    let path = '', previous = null;
+    for (const {unix_time: time, value} of readings) {
+      if (!Number.isFinite(value) || time < end - 86400) { previous = null; continue; }
+      const x = 52 + (right - 52) * (time - end + 86400) / 86400;
+      const y = yFor(value);
+      const connected = previous !== null && time - previous < 120;
+      path += `${connected ? 'L' : 'M'}${x} ${y}`;
+      if (!connected) svg.append(element('circle', {cx: x, cy: y, r: 2, fill: 'currentColor', class: style}));
+      previous = time;
+    }
+    svg.append(element('path', {d: path, class: `trace ${style}`}));
   }
-  svg.append(element('path', {d: path, class: 'trace'}));
+
+  plot(samples.map(sample => ({unix_time: sample.unix_time, value: sample[key]})),
+    value => 112 - 100 * value / top, '');
+  if (charge) {
+    const rates = samples.map(({unix_time, battery_percent}, index) => {
+      const previous = samples[index - 1];
+      const seconds = unix_time - previous?.unix_time;
+      const value = seconds > 0 && seconds < 120 &&
+        Number.isFinite(battery_percent) && Number.isFinite(previous.battery_percent)
+        ? (battery_percent - previous.battery_percent) * 60 / seconds : null;
+      return {unix_time, value};
+    });
+    const limit = Math.max(0.5, ...rates.map(({value}) => Math.ceil(Math.abs(value) * 2) / 2));
+    svg.append(element('line', {x1: 52, x2: right, y1: 62, y2: 62, class: 'grid'}));
+    svg.append(element('text', {x: right + 8, y: 16, class: 'rate'}, `+${limit} pp/min`),
+      element('text', {x: right + 8, y: 66, class: 'rate'}, '0'),
+      element('text', {x: right + 8, y: 116, class: 'rate'}, `−${limit} pp/min`));
+    plot(rates, value => 62 - 50 * value / limit, 'rate');
+  }
   card.append(svg);
   return card;
 }
