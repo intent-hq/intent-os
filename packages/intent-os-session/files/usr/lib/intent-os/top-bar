@@ -219,7 +219,7 @@ class TopBar(Gtk.Window):
         gap.set_size_request(8, -1)
         self.bar.pack_start(gap, False, False, 0)
         self.power = self.text_button(self.bar, self.open_power, I_MENU)
-        self.power.set_tooltip_text("Device actions")
+        self.power.get_accessible().set_name("Device actions")
         edge = Gtk.Box()
         edge.set_size_request(6, -1)
         self.bar.pack_start(edge, False, False, 0)
