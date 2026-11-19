@@ -285,7 +285,7 @@ class TopBar(Gtk.Window):
         self.awake = self.item(None)
         self.awake.set_text(I_AWAKE)
         self.awake.get_parent().set_tooltip_text("An agent is working: the device stays awake")
-        self.brightness = self.item(None)
+        self.brightness = self.item(self.refresh_brightness)
         self.volume = self.item(self.toggle_mute)
         volume_box = self.volume.get_parent()
         volume_box.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
