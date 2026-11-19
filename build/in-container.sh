@@ -156,6 +156,13 @@ build_live_package() {
   # the Air's BCM4360.
   printf 'blacklist %s\n' b43 b43legacy ssb bcma bcm43xx \
     | install -Dm644 /dev/stdin "$dir/root/usr/lib/modprobe.d/intent-os-live-wl.conf"
+  # wl also claims newer Broadcom chips (the BCM43602 in 2016-2017 MacBook
+  # Pros) and then fights brcmfmac. Never autoload it; udev loads it only for
+  # the Air's BCM4360 (14e4:43a0).
+  echo 'blacklist wl' >> "$dir/root/usr/lib/modprobe.d/intent-os-live-wl.conf"
+  install -Dm644 /dev/stdin "$dir/root/usr/lib/udev/rules.d/60-intent-os-live-wl.rules" <<'RULE'
+ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x14e4", ATTR{device}=="0x43a0", RUN+="/usr/bin/modprobe wl"
+RULE
   mkdir -p "$dir/root/usr/lib/firmware"
   # Wi-Fi files only: Intel iwlwifi, Qualcomm Atheros ath*k, MediaTek mt7x
   # (no Bluetooth, GPU or SoC firmware from these packages).
