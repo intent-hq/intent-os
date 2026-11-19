@@ -47,9 +47,15 @@ if [[ ${secured[$index]} == 1 ]]; then
   pw=$(menu --password --prompt-only "Password for $ssid  " </dev/null) || exit 0
   [[ -n $pw ]] || exit 0
   if ! nmcli dev wifi connect "$ssid" password "$pw" >/dev/null 2>&1; then
-    # Drop the failed profile so the next try asks for the password again.
+    # Drop the failed profile, then retry with WPA2 only: Broadcom brcmfmac
+    # (many Macs) fails on routers that offer WPA2 and WPA3 together.
     nmcli connection delete id "$ssid" >/dev/null 2>&1
-    fail "Could not connect to $ssid. Check the password and try again."
+    if ! { nmcli connection add type wifi con-name "$ssid" ssid "$ssid" \
+             wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$pw" >/dev/null 2>&1 &&
+           nmcli connection up id "$ssid" >/dev/null 2>&1; }; then
+      nmcli connection delete id "$ssid" >/dev/null 2>&1
+      fail "Could not connect to $ssid. Check the password and try again."
+    fi
   fi
 else
   nmcli dev wifi connect "$ssid" >/dev/null 2>&1 || fail "Could not connect to $ssid."
