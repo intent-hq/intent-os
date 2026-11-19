@@ -254,6 +254,7 @@ CONF
     find "$profile/efiboot" "$profile/grub" "$profile/syslinux" -type f \
       \( -name '*.conf' -o -name '*.cfg' \) -exec sed -i \
       -e 's/vmlinuz-linux\b/vmlinuz-linux-t2/g' -e 's/initramfs-linux\.img/initramfs-linux-t2.img/g' {} +
+    # shellcheck disable=SC2016 # ${archiso_platform} is GRUB's, matched literally
     sed -i 's/^menuentry "Arch Linux (%ARCH%, ${archiso_platform})"/menuentry "Intent OS installer"/' "$profile/grub/grub.cfg"
     cat >> "$profile/grub/grub.cfg" <<'GRUB'
 
