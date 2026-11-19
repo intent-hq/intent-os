@@ -1,7 +1,7 @@
 # Kiosk session: sway shows only Intent plus a thin top bar with device controls.
 pkgname=intent-os-session
 pkgver=0.1.0
-pkgrel=6
+pkgrel=7
 pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervision"
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
@@ -12,6 +12,9 @@ depends=(intent-os-base intent-appimage sway swayidle hyprlock swaylock greetd x
 depends+=(grim slurp wl-clipboard)
 # Map Command shortcuts on Apple keyboards at the Linux input layer.
 depends+=(keyd)
+# Passkeys in Intent's browser: a phone signs in over Bluetooth LE (FIDO hybrid,
+# QR code), and /etc/pam.d/intent-passkey checks the PIN for device passkeys.
+depends+=(bluez bluez-utils)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
@@ -20,4 +23,5 @@ package() {
   ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
   # Boot test only; it exits at once unless QEMU passes opt/intent-os/test.
   ln -s ../intent-os-test-report.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-os-test-report.service"
+  ln -s ../bluetooth.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/bluetooth.service"
 }

@@ -1,0 +1,6 @@
+#%PAM-1.0
+# Intent device passkeys: each use is confirmed with the owner's PIN (the Linux
+# password), checked like the lock screen. Intent enables device passkeys only
+# when this file exists.
+auth      include   login
+account   include   login
