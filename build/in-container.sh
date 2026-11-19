@@ -151,10 +151,11 @@ build_live_package() {
   rm -rf "$dir" "$WORK/live-repo"
   mkdir -p "$dir/root" "$WORK/live-repo"
   install -Dm644 "$wl" "$dir/root${wl}"
-  local conf
-  for conf in /usr/lib/modprobe.d/broadcom-wl*.conf; do
-    install -Dm644 "$conf" "$dir/root$conf"
-  done
+  # broadcom-wl's own modprobe.d file also blacklists brcmfmac, which other
+  # Macs (BCM43602 and newer) need. Block only the drivers that fight wl for
+  # the Air's BCM4360.
+  printf 'blacklist %s\n' b43 b43legacy ssb bcma bcm43xx \
+    | install -Dm644 /dev/stdin "$dir/root/usr/lib/modprobe.d/intent-os-live-wl.conf"
   mkdir -p "$dir/root/usr/lib/firmware"
   # Wi-Fi files only: Intel iwlwifi, Qualcomm Atheros ath*k, MediaTek mt7x
   # (no Bluetooth, GPU or SoC firmware from these packages).
