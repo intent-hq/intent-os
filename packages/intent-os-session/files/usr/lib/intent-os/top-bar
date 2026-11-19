@@ -185,7 +185,7 @@ class TopBar(Gtk.Window):
         Gtk.StyleContext.add_provider_for_screen(
             self.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-        self.bar = Gtk.Box(spacing=2, name="bar")
+        self.bar = Gtk.Box(spacing=4, name="bar")
         self.bar.set_size_request(-1, HEIGHT)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.network = self.item(lambda: run("intent-os-wifi", hold=True))
@@ -195,11 +195,17 @@ class TopBar(Gtk.Window):
         volume_box.connect("scroll-event", self.on_volume_scroll)
         self.battery = self.item(None)
         self.clock = self.item(None)
+        gap = Gtk.Box()
+        gap.set_size_request(8, -1)
+        self.bar.pack_start(gap, False, False, 0)
         self.button(I_RESTART_INTENT, lambda: run("systemctl", "--user", "restart", "intent.service"))
         self.reboot = self.button(I_REBOOT, lambda: confirm(
             "Restart this device?", "Restart", "systemctl reboot"))
         self.button(I_POWER, lambda: confirm(
             "Shut down this device?", "Shut down", "systemctl poweroff"))
+        edge = Gtk.Box()
+        edge.set_size_request(6, -1)
+        self.bar.pack_start(edge, False, False, 0)
 
         self.strip = Gtk.EventBox()
         self.strip.set_size_request(-1, TRIGGER)
@@ -216,6 +222,9 @@ class TopBar(Gtk.Window):
     def item(self, action):
         box = Gtk.EventBox()
         label = Gtk.Label()
+        # GTK ignores CSS padding on an EventBox; space the label itself.
+        label.set_margin_start(10)
+        label.set_margin_end(10)
         box.add(label)
         box.get_style_context().add_class("item")
         if action:
@@ -227,6 +236,7 @@ class TopBar(Gtk.Window):
     def button(self, icon, action):
         box = Gtk.EventBox()
         label = Gtk.Label(label=icon)
+        box.set_size_request(HEIGHT + 6, -1)
         box.add(label)
         box.get_style_context().add_class("button")
         box.connect("button-press-event", lambda *_: action())
