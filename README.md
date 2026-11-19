@@ -37,7 +37,7 @@ The companion is off by default; owners can enable it in Intent.
 Press **Cmd+Shift+3** (or **Print Screen**) to copy a screenshot to the clipboard.
 Press **Cmd+Shift+4** (or **Shift+Print Screen**) to select and copy an area.
 
-On Apple keyboards, Command acts like Ctrl for most shortcuts. **Cmd+C/V/X**
+On supported MacBook Air keyboards, Command acts like Ctrl for most shortcuts. **Cmd+C/V/X**
 still copy, paste, and cut in Intent. **Cmd+Shift+V** pastes as plain text in
 the composer. **Ctrl+Cmd+Q** locks the screen.
 

@@ -20,7 +20,7 @@ input type:keyboard {
 }
 
 # Top-row keys. Volume and brightness also show the top bar briefly.
-set $peek pkill -USR1 -f /usr/lib/intent-os/top-bar
+set $peek systemctl --user kill --kill-whom=main --signal=USR1 intent-os-top-bar.service
 bindsym --locked XF86MonBrightnessUp exec brightnessctl -q set +5% && $peek
 bindsym --locked XF86MonBrightnessDown exec brightnessctl -q set 5%- && $peek
 bindsym --locked XF86KbdBrightnessUp exec brightnessctl -q -d '*::kbd_backlight' set +10%

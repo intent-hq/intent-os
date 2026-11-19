@@ -204,7 +204,7 @@ class TopBar(Gtk.Window):
         self.bar = Gtk.Box(spacing=4, name="bar")
         self.bar.set_size_request(-1, HEIGHT)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
-        self.network = self.item(lambda: run("intent-os-wifi", hold=True))
+        self.network = self.item(self.open_wifi)
         self.awake = self.item(None)
         self.awake.set_text(I_AWAKE)
         self.awake.get_parent().set_tooltip_text("An agent is working: the device stays awake")
@@ -238,6 +238,13 @@ class TopBar(Gtk.Window):
         GLib.timeout_add_seconds(5, self.refresh)
         # The volume and brightness keys send SIGUSR1: show the bar briefly.
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, unix_signal.SIGUSR1, self.peek)
+
+    def open_wifi(self):
+        control = self.network.get_parent()
+        bar_width = self.bar.get_allocated_width()
+        right = control.get_allocation().x + control.get_allocated_width()
+        margin = max(8, min(bar_width - right, bar_width - 480))
+        run("intent-os-wifi", "--x-margin", str(margin), hold=True)
 
     def item(self, action):
         box = Gtk.EventBox()
@@ -293,7 +300,8 @@ class TopBar(Gtk.Window):
         self.volume.get_parent().set_visible(bool(text))
 
     def peek(self):
-        self.open()
+        self.refresh_volume()
+        self.open(refresh=False)
         self.cancel_close()
         self.close_timer = GLib.timeout_add(PEEK_MS, self.close)
         return True  # keep the signal handler
@@ -314,11 +322,12 @@ class TopBar(Gtk.Window):
             ctx.remove_class("hint")
         return True
 
-    def open(self):
+    def open(self, refresh=True):
         self.cancel_close()
         if self.get_child() is self.bar:
             return
-        self.refresh()
+        if refresh:
+            self.refresh()
         self.remove(self.strip)
         self.add(self.bar)
         self.bar.show_all()
