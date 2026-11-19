@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IntentOS Energy</title>
+<style>
+:root { color-scheme: light dark; font: 14px Inter, system-ui, sans-serif; }
+body { max-width: 850px; margin: auto; padding: 24px; color: light-dark(#080808,#f0f0eb); background: light-dark(#f0f0eb,#161616); }
+h1 { font-size: 24px; margin: 0 0 6px; }
+h2 { font-size: 15px; margin: 0 0 12px; }
+p { color: light-dark(#525250,#babab7); }
+section { background: light-dark(#fff,#272727); padding: 16px; border-radius: 10px; margin: 12px 0; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { fill: currentColor; font-size: 12px; }
+.trace { fill: none; stroke: light-dark(#717453,#ddec61); stroke-width: 2; }
+.grid { stroke: currentColor; opacity: .15; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 0; }
+td:last-child, th:last-child { text-align: right; }
+</style>
+<main>
+<h1>Energy</h1>
+<p id="latest" role="status">Loading the last 24 hours…</p>
+<div id="charts"></div>
+<section>
+<h2>CPU activity</h2>
+<p>CPU time by process name, based on the busiest processes in each sample.</p>
+<table><thead><tr><th>Process</th><th>CPU minutes</th></tr></thead><tbody id="processes"></tbody></table>
+</section>
+</main>
+<script>
+const charts = document.querySelector('#charts');
+const latest = document.querySelector('#latest');
+const processes = document.querySelector('#processes');
+const metrics = [
+  ['battery_watts', 'Battery draw', 'W', 1],
+  ['cpu_package_watts', 'CPU package power', 'W', 1],
+  ['busy_cpu_percent', 'CPU activity (100% = one core)', '%', 100],
+  ['battery_percent', 'Battery charge', '%', 100],
+  ['brightness_percent', 'Screen brightness', '%', 100],
+];
+const svgNS = 'http://www.w3.org/2000/svg';
+function element(name, attrs, value) {
+  const node = document.createElementNS(svgNS, name);
+  for (const [key, val] of Object.entries(attrs)) node.setAttribute(key, val);
+  if (value != null) node.textContent = value;
+  return node;
+}
+function chart(samples, [key, label, unit, floor], end) {
+  const card = document.createElement('section');
+  const heading = document.createElement('h2');
+  heading.textContent = label;
+  card.append(heading);
+  const values = samples.map(sample => sample[key]).filter(Number.isFinite);
+  if (!values.length) {
+    const empty = document.createElement('p');
+    empty.textContent = key === 'battery_watts' ? 'No unplugged readings in this period.' : 'No readings in this period.';
+    card.append(empty);
+    return card;
+  }
+  heading.textContent += ` · ${(values.reduce((a, b) => a + b, 0) / values.length).toFixed(1)} ${unit} average`;
+  const top = Math.max(floor, Math.ceil(Math.max(...values)));
+  const svg = element('svg', {viewBox: '0 0 660 140', role: 'img', 'aria-label': label + ' over the last 24 hours'});
+  for (const y of [12, 112]) svg.append(element('line', {x1: 52, x2: 648, y1: y, y2: y, class: 'grid'}));
+  svg.append(element('text', {x: 0, y: 16}, `${top} ${unit}`), element('text', {x: 0, y: 116}, '0'));
+  svg.append(element('text', {x: 52, y: 136}, '24 hours ago'), element('text', {x: 648, y: 136, 'text-anchor': 'end'}, 'Now'));
+  let path = '', previous = null;
+  for (const sample of samples) {
+    const value = sample[key];
+    if (!Number.isFinite(value)) { previous = null; continue; }
+    const x = 52 + 596 * (sample.unix_time - end + 86400) / 86400;
+    const y = 112 - 100 * value / top;
+    path += `${previous !== null && sample.unix_time - previous < 120 ? 'L' : 'M'}${x} ${y}`;
+    if (previous === null || sample.unix_time - previous >= 120)
+      svg.append(element('circle', {cx: x, cy: y, r: 2, fill: 'currentColor'}));
+    previous = sample.unix_time;
+  }
+  svg.append(element('path', {d: path, class: 'trace'}));
+  card.append(svg);
+  return card;
+}
+async function refresh() {
+  try {
+    const response = await fetch('/samples');
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    const now = Date.now() / 1000;
+    const last = data.samples.at(-1);
+    latest.textContent = last ? [
+      'Last 24 hours', new Date(last.unix_time * 1000).toLocaleTimeString(),
+      last.on_ac === 1 ? 'Plugged in' : last.on_ac === 0 ? 'On battery' : 'Power source unknown',
+      last.battery_percent == null ? null : `${last.battery_percent}% charge`,
+      `${data.samples.length} samples`,
+    ].filter(Boolean).join(' · ') : 'Waiting for the first sample.';
+    charts.replaceChildren(...metrics.map(metric => chart(data.samples, metric, now)));
+    processes.replaceChildren(...data.processes.map(process => {
+      const row = document.createElement('tr');
+      row.insertCell().textContent = process.name;
+      row.insertCell().textContent = (process.cpu_seconds / 60).toFixed(1);
+      return row;
+    }));
+  } catch {
+    latest.textContent = 'Could not load energy readings. Retrying in one minute.';
+  }
+}
+refresh();
+setInterval(refresh, 60000);
+</script>
+</html>
