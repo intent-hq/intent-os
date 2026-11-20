@@ -5,7 +5,6 @@ It takes no space. A 2 px strip waits at the top edge; when the pointer
 touches it, the bar opens on top of Intent and closes once the pointer
 leaves it. The menu button opens the device actions.
 """
-from collections import deque
 import json
 import os
 from pathlib import Path
@@ -13,6 +12,7 @@ import signal as unix_signal
 import subprocess
 import struct
 import time
+from urllib.request import ProxyHandler, build_opener
 
 import gi
 
@@ -221,38 +221,37 @@ def last_update_date():
     return "recently"
 
 
-def battery_eta(path, charging, rates):
-    """Estimate from the last five minutes of rates in matching units."""
-    for kind, rate_kind in (("energy", "power"), ("charge", "current")):
-        now = read_int(f"{path}/{kind}_now")
-        full = read_int(f"{path}/{kind}_full")
-        if now is None or now < 0 or not full or full < 0:
-            continue
-        remaining = max(0, full - now) if charging else now
-        if not remaining:
-            return ""
-        rate = read_int(f"{path}/{rate_kind}_now") or read_int(f"{path}/{rate_kind}_avg")
-        if rate:
-            sample_time = time.monotonic()
-            key = (path, charging, kind)
-            if rates and rates[-1][2] != key:
-                rates.clear()
-            while rates and rates[0][0] <= sample_time - 300:
-                rates.popleft()
-            # Key-triggered refreshes must not give a brief burst extra weight.
-            if not rates or sample_time - rates[-1][0] >= 4:
-                rates.append((sample_time, abs(rate), key))
-            if sample_time - rates[0][0] < 60:
-                return " · Estimating…"
-            average_rate = sum(value for _, value, _ in rates) / len(rates)
-            minutes = max(5, 5 * round(12 * remaining / average_rate))
-            hours, minutes = divmod(minutes, 60)
-            duration = f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
-            return f" · ~{duration} {'to full' if charging else 'left'}"
-    return ""
+def battery_eta(charging):
+    """Use the recorded battery-level change during the current power session."""
+    try:
+        with build_opener(ProxyHandler({})).open(
+            "http://127.0.0.1:40339/battery-recent", timeout=0.15
+        ) as response:
+            samples = json.load(response)
+    except (OSError, ValueError):
+        return ""
+    if not samples or not 0 <= time.time() - samples[0][0] <= 90:
+        return ""
+    levels = []
+    for timestamp, on_ac, percent in samples:
+        if on_ac != int(charging) or percent is None:
+            break
+        levels.append((timestamp, max(0, min(100, percent))))
+    if not levels:
+        return ""
+    newest, level = levels[0]
+    oldest, previous = levels[-1]
+    change = level - previous if charging else previous - level
+    remaining = 100 - level if charging else level
+    if newest - oldest < 120 or change <= 0 or not remaining:
+        return ""
+    minutes = max(5, 5 * round((newest - oldest) * remaining / (300 * change)))
+    hours, minutes = divmod(minutes, 60)
+    duration = f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
+    return f" · ~{duration} {'to full' if charging else 'left'}"
 
 
-def battery_text(rates):
+def battery_text():
     base = "/sys/class/power_supply"
     supplies = sorted(os.listdir(base)) if os.path.isdir(base) else []
     plugged_in = any(read_int(f"{base}/{ps}/online") == 1 for ps in supplies)
@@ -272,14 +271,11 @@ def battery_text(rates):
         charging = status == "Charging"
         if plugged_in or charging:
             icon = I_CHARGING
-            estimate = battery_eta(path, charging=True, rates=rates) if charging else ""
+            estimate = battery_eta(charging=True) if charging else ""
         else:
             icon = I_BATTERY_ALERT if worn else I_BATTERY[max(0, min(9, cap // 10 - 1))]
-            estimate = battery_eta(path, charging=False, rates=rates) if status == "Discharging" else ""
-        if not estimate:
-            rates.clear()
+            estimate = battery_eta(charging=False) if status == "Discharging" else ""
         return f"{icon} {cap}%{estimate}"
-    rates.clear()
     return ""
 
 
@@ -333,7 +329,6 @@ class TopBar(Gtk.Window):
         volume_box = self.volume.get_parent()
         volume_box.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
         volume_box.connect("scroll-event", self.on_volume_scroll)
-        self.battery_rates = deque()
         self.battery = self.item(None)
         self.clock = self.item(None)
         gap = Gtk.Box()
@@ -582,7 +577,7 @@ class TopBar(Gtk.Window):
         self.network.set_text(network_text())
         self.refresh_brightness()
         self.refresh_volume()
-        bat = battery_text(self.battery_rates)
+        bat = battery_text()
         self.battery.set_text(bat)
         self.battery.get_parent().set_visible(bool(bat))
         self.clock.set_text(time.strftime("%a %-d %b  %H:%M"))
