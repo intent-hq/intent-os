@@ -83,6 +83,12 @@ silicon Mac, use the `aarch64` one.
 The aarch64 build uses Arch Linux ARM. It updates from Arch Linux ARM mirrors, which have
 no tested snapshot like the x86_64 build.
 
+Intent OS logs power and CPU activity once a minute in
+`/var/lib/intent-energy/energy.sqlite3`. The local database requires root access.
+It records battery draw, brightness, CPU package power when available, and CPU
+time for the 15 busiest process names. It does not store command lines.
+Open `http://127.0.0.1:40339` on the device to see the last 24 hours.
+
 ## Layout
 
 | Path | Purpose |
