@@ -92,7 +92,8 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    code and Bluetooth LE, so `bluez` runs (`bluetooth.service`; skipped when there is no
    adapter). Device passkeys are confirmed with the PIN through PAM service
    `intent-passkey` (same stack as the lock screen); Intent offers them only when
-   `/etc/pam.d/intent-passkey` exists. With no TPM, those keys are on disk, encrypted
+   `/etc/pam.d/intent-passkey` exists. `run-intent` sets `INTENT_BROWSER_PASSKEYS=1`, which
+   turns passkeys on in Intent (off by default elsewhere). With no TPM, those keys are on disk, encrypted
    with a key made from the PIN: a stolen disk allows offline PIN guessing, so a long
    PIN is safer.
 
