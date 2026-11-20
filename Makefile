@@ -22,7 +22,7 @@ DOCKER_ARM = docker run --rm --privileged --platform linux/arm64 \
 	-e INTENT_OS_SIGNING_KEY -e HOST_UID="$(shell id -u)" \
 	$(ALARM_IMAGE) bash build/in-container.sh
 
-.PHONY: packages image smoke lint clean alarm-image image-arm64 image-asahi smoke-arm64
+.PHONY: packages packages-arm64 image smoke lint clean alarm-image image-arm64 image-asahi smoke-arm64
 
 packages:
 	$(DOCKER) packages
@@ -36,6 +36,9 @@ smoke:
 alarm-image:
 	docker image inspect $(ALARM_IMAGE) >/dev/null 2>&1 || \
 		curl -fsSL $(ALARM_ROOTFS) | docker import --platform linux/arm64 - $(ALARM_IMAGE)
+
+packages-arm64: alarm-image
+	$(DOCKER_ARM) packages
 
 image-arm64: alarm-image
 	$(DOCKER_ARM) all
