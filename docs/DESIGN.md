@@ -17,7 +17,7 @@ base layer.
    compiler on the stick). The build fails if the ISO passes 560 MiB (520 MiB today). The installer downloads
    packages from the Arch snapshot the image was tested with and the signed `intent-os`
    repo, so it installs the set that passed the boot test. It needs a network.
-   Installed systems get laptop and desktop firmware (no Qualcomm, Mellanox, NVIDIA,
+   Installed systems get laptop and desktop firmware, including Intel SOF audio (no Qualcomm, Mellanox, NVIDIA,
    Marvell).
 3. **OS updates are `pacman -Syu`** against the pinned snapshot, plus the signed
    `intent-os` repo for Intent OS packages. **Intent updates itself** in the app.

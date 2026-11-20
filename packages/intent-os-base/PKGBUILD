@@ -20,6 +20,9 @@ depends_x86_64=(
   linux-firmware-intel linux-firmware-amdgpu linux-firmware-amd linux-firmware-radeon
   linux-firmware-atheros linux-firmware-broadcom linux-firmware-mediatek linux-firmware-realtek
   linux-firmware-cirrus linux-firmware-ti linux-firmware-other
+  # Intel Smart Sound (SOF) DSP firmware: speakers and microphones on most
+  # Intel laptops since 2019.
+  sof-firmware
 )
 # Arch Linux ARM generic kernel. The arm64 target today is VMs on Apple
 # silicon Macs, which need no firmware.
