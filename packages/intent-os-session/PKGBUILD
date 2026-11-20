@@ -1,7 +1,7 @@
 # Kiosk session: sway shows only Intent plus a thin top bar with device controls.
 pkgname=intent-os-session
 pkgver=0.1.0
-pkgrel=8
+pkgrel=9
 pkgdesc="Intent OS session: kiosk compositor, PIN lock, device controls, supervision"
 arch=(any)
 url="https://github.com/intent-hq/intent-os"
@@ -17,6 +17,8 @@ depends+=(python)
 # Passkeys in Intent's browser: a phone signs in over Bluetooth LE (FIDO hybrid,
 # QR code), and /etc/pam.d/intent-passkey checks the PIN for device passkeys.
 depends+=(bluez bluez-utils)
+# Supply native file open and save dialogs to Intent on Wayland.
+depends+=(xdg-desktop-portal xdg-desktop-portal-gtk)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
