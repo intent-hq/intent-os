@@ -34,6 +34,10 @@ if [[ ${1:-} != --now ]]; then
   idle || { log "owner is active; skip"; exit 0; }
 fi
 
+# Serialize the timer and menu so only one updater can change the package repo.
+exec 9>/run/intent-os-update.lock
+flock 9
+
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 if ! curl -fsSL --max-time 30 "$CHANNEL_URL" -o "$tmp"; then
