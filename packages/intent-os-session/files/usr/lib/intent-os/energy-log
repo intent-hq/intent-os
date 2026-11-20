@@ -22,6 +22,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.path == "/":
             body = DASHBOARD.read_bytes()
             content_type = "text/html; charset=utf-8"
+        elif self.path == "/battery-recent":
+            with sqlite3.connect(f"file:{DATABASE}?mode=ro", uri=True) as connection:
+                samples = connection.execute(
+                    """SELECT unix_time, on_ac, battery_percent FROM samples
+                       WHERE unix_time >= ? ORDER BY unix_time DESC, id DESC LIMIT 6""",
+                    (int(time.time()) - 300,),
+                ).fetchall()
+            connection.close()
+            body = json.dumps(samples).encode()
+            content_type = "application/json"
         elif self.path == "/samples":
             since = int(time.time()) - 86400
             with sqlite3.connect(f"file:{DATABASE}?mode=ro", uri=True) as connection:
