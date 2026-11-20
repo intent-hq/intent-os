@@ -1,0 +1,1 @@
+SUBSYSTEM=="power_supply", ACTION=="add|change|remove", RUN+="/usr/lib/intent-os/low-power apply"

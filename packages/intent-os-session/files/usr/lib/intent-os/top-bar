@@ -3,13 +3,16 @@
 
 It takes no space. A 2 px strip waits at the top edge; when the pointer
 touches it, the bar opens on top of Intent and closes once the pointer
-leaves it. Icons: refresh = restart Intent, circular arrow = restart the
-device (amber when an installed update needs it), power = shut down.
+leaves it. The menu button opens the device actions.
 """
+import json
 import os
+from pathlib import Path
 import signal as unix_signal
 import subprocess
+import struct
 import time
+from urllib.request import ProxyHandler, build_opener
 
 import gi
 
@@ -28,25 +31,53 @@ I_BATTERY = ["\U000f007a", "\U000f007b", "\U000f007c", "\U000f007d", "\U000f007e
              "\U000f007f", "\U000f0080", "\U000f0081", "\U000f0082", "\U000f0079"]
 I_CHARGING = "\U000f0084"
 I_BATTERY_ALERT = "\U000f0083"  # worn battery: replace it
-I_RESTART_INTENT = "\U000f0450"
-I_REBOOT = "\U000f0709"
-I_POWER = "\U000f0425"
 I_VOLUME = ["\U000f057f", "\U000f0580", "\U000f057e"]  # low, medium, high
 I_MUTED = "\U000f075f"
-I_UNDO = "\U000f02da"  # history
+I_BRIGHTNESS = "\U000f00e0"
+I_POWER = "\U000f0425"
+I_MENU = "\U000f035c"
+I_RESTART_INTENT = "\U000f0450"
+I_REBOOT = "\U000f0709"
+I_LOW_POWER = "\U000f124d"
+I_SLEEP = "\U000f04b2"
+I_LOCK = "\U000f033e"
+I_UNDO = "\U000f02da"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
+LOW_POWER_ENABLED = Path("/var/lib/intent-os/low-power-enabled")
+TURBO_CONTROL = Path("/sys/devices/system/cpu/intel_pstate/no_turbo")
 LAST_UPDATE = "/var/lib/intent-os/last-update"
 PEEK_MS = 1500
 
-CSS = b"""
+# Semantic colors from https://intentapp.dev/design-system.md
+PALETTES = {
+    "light": ("#f0f0eb", "#ffffff", "#080808", "#525250", "#e1e1de", "#e5e5e5", "#717453"),
+    "dark": ("#161616", "#272727", "#f0f0eb", "#babab7", "#3d3d3c", "#3d3d3c", "#ddec61"),
+}
+
+CSS = """
 window { background: transparent; }
-#bar { background: #0b0b0c; color: #d4d4d8; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
-.item { padding: 0 9px; }
-.button { padding: 0 8px; color: #a1a1aa; border-radius: 6px; }
-.button:hover, .item.clickable:hover { background: #27272a; color: #fafafa; }
-.hint { color: #fbbf24; }
+#bar, popover.power-menu { color: @content; font: 10pt "Inter", "Symbols Nerd Font Mono"; }
+#bar { background: @canvas; border-bottom: 1px solid @edge; }
+.brand { margin-left: 12px; font-weight: 600; }
+.brand-mark { background-color: #161616; border-radius: 5px; background-repeat: no-repeat; background-position: center; background-size: 16px; background-image: url("/usr/share/intent-os/intent-mark-lime.svg"); }
+.item { padding: 0 8px; color: @muted; }
+.button, .item.clickable { border-radius: 5px; }
+.button { padding: 0 8px; color: @content; }
+.button:hover, .item.clickable:hover { background: @hover; color: @content; }
+.hint { color: @accent; }
+popover.power-menu { background: @surface; border: 1px solid @edge; border-radius: 10px; }
+.power-menu .button { padding: 5px 10px; }
 """
+
+
+def style_bar(settings, provider):
+    dark = settings.get_property("gtk-application-prefer-dark-theme")
+    dark = dark or "dark" in settings.get_property("gtk-theme-name").lower()
+    names = ("canvas", "surface", "content", "muted", "hover", "edge", "accent")
+    colors = PALETTES["dark" if dark else "light"]
+    tokens = "".join(f"@define-color {name} {value};\n" for name, value in zip(names, colors))
+    provider.load_from_data((tokens + CSS).encode())
 
 
 # Menus and prompts opened from the bar (Wi-Fi picker, confirmations). The bar
@@ -72,6 +103,42 @@ def output(*cmd):
     except (OSError, subprocess.TimeoutExpired):
         return ""
 
+def app_version(archive):
+    with archive.open("rb") as file:
+        _, header_size, _, json_size = struct.unpack("<4I", file.read(16))
+        if not 0 < json_size <= header_size <= 32 * 1024 * 1024:
+            return ""
+        package = json.loads(file.read(json_size))["files"]["package.json"]
+        if not 0 < package["size"] <= 1024 * 1024:
+            return ""
+        file.seek(8 + header_size + int(package["offset"]))
+        return json.loads(file.read(package["size"]))["version"]
+
+
+def versions():
+    try:
+        os_version = Path("/var/lib/intent-os/applied-build").read_text().strip()
+    except OSError:
+        os_version = ""
+    if not os_version:
+        os_version = output("pacman", "-Q", "intent-os-session").partition(" ")[2].strip()
+    app = daemon = ""
+    pid = output("pgrep", "-o", "-u", str(os.getuid()), "-x", "intent").strip()
+    if pid.isdecimal():
+        try:
+            exe = Path(f"/proc/{pid}/exe").resolve(strict=True)
+            app = app_version(exe.parent / "resources/app.asar")
+        except (OSError, ValueError, KeyError, TypeError, struct.error):
+            pass
+    try:
+        pid = (Path.home() / ".local/share/intentd/intentd.pid").read_text().strip()
+        if pid.isdecimal():
+            exe = Path(f"/proc/{pid}/exe").resolve(strict=True)
+            if exe.name == "intentd":
+                daemon = output(str(exe), "--version").strip().removeprefix("intentd ")
+    except OSError:
+        pass
+    return os_version, app, daemon
 
 
 
@@ -154,9 +221,41 @@ def last_update_date():
     return "recently"
 
 
+def battery_eta(charging):
+    """Use the recorded battery-level change during the current power session."""
+    try:
+        with build_opener(ProxyHandler({})).open(
+            "http://127.0.0.1:40339/battery-recent", timeout=0.15
+        ) as response:
+            samples = json.load(response)
+    except (OSError, ValueError):
+        return ""
+    if not samples or not 0 <= time.time() - samples[0][0] <= 90:
+        return ""
+    levels = []
+    for timestamp, on_ac, percent in samples:
+        if on_ac != int(charging) or percent is None:
+            break
+        levels.append((timestamp, max(0, min(100, percent))))
+    if not levels:
+        return ""
+    newest, level = levels[0]
+    oldest, previous = levels[-1]
+    change = level - previous if charging else previous - level
+    remaining = 100 - level if charging else level
+    if newest - oldest < 120 or change <= 0 or not remaining:
+        return ""
+    minutes = max(5, 5 * round((newest - oldest) * remaining / (300 * change)))
+    hours, minutes = divmod(minutes, 60)
+    duration = f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
+    return f" · ~{duration} {'to full' if charging else 'left'}"
+
+
 def battery_text():
     base = "/sys/class/power_supply"
-    for ps in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+    supplies = sorted(os.listdir(base)) if os.path.isdir(base) else []
+    plugged_in = any(read_int(f"{base}/{ps}/online") == 1 for ps in supplies)
+    for ps in supplies:
         path = f"{base}/{ps}"
         try:
             with open(f"{path}/type") as f:
@@ -169,11 +268,14 @@ def battery_text():
         cap, worn = battery_percent(path)
         if cap is None:
             continue
-        if worn:
-            return f"{I_BATTERY_ALERT} {cap}%"
-        if status == "Charging":
-            return f"{I_CHARGING} {cap}%"
-        return f"{I_BATTERY[max(0, min(9, cap // 10 - 1))]} {cap}%"
+        charging = status == "Charging"
+        if plugged_in or charging:
+            icon = I_CHARGING
+            estimate = battery_eta(charging=True) if charging else ""
+        else:
+            icon = I_BATTERY_ALERT if worn else I_BATTERY[max(0, min(9, cap // 10 - 1))]
+            estimate = battery_eta(charging=False) if status == "Discharging" else ""
+        return f"{icon} {cap}%{estimate}"
     return ""
 
 
@@ -195,17 +297,34 @@ class TopBar(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
 
         provider = Gtk.CssProvider()
-        provider.load_from_data(CSS)
+        settings = self.get_settings()
+        style_bar(settings, provider)
+        for name in ("gtk-application-prefer-dark-theme", "gtk-theme-name"):
+            settings.connect(f"notify::{name}", lambda *_: style_bar(settings, provider))
         Gtk.StyleContext.add_provider_for_screen(
             self.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         self.bar = Gtk.Box(spacing=4, name="bar")
         self.bar.set_size_request(-1, HEIGHT)
+        brand = Gtk.Box(spacing=6)
+        brand.get_style_context().add_class("brand")
+        mark = Gtk.Box()
+        mark.set_size_request(22, 22)
+        mark.set_valign(Gtk.Align.CENTER)
+        mark.get_style_context().add_class("brand-mark")
+        brand.pack_start(mark, False, False, 0)
+        brand.pack_start(Gtk.Label(label="IntentOS"), False, False, 0)
+        brand_button = Gtk.EventBox()
+        brand_button.add(brand)
+        brand_button.get_style_context().add_class("button")
+        brand_button.connect("button-press-event", lambda *_: self.open_versions())
+        self.bar.pack_start(brand_button, False, False, 0)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.network = self.item(self.open_wifi)
         self.awake = self.item(None)
         self.awake.set_text(I_AWAKE)
         self.awake.get_parent().set_tooltip_text("An agent is working: the device stays awake")
+        self.brightness = self.item(self.refresh_brightness)
         self.volume = self.item(self.toggle_mute)
         volume_box = self.volume.get_parent()
         volume_box.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
@@ -215,15 +334,52 @@ class TopBar(Gtk.Window):
         gap = Gtk.Box()
         gap.set_size_request(8, -1)
         self.bar.pack_start(gap, False, False, 0)
-        self.undo = self.button(I_UNDO, self.confirm_undo)
-        self.button(I_RESTART_INTENT, lambda: run("systemctl", "--user", "restart", "intent.service"))
-        self.reboot = self.button(I_REBOOT, lambda: self.ask(
-            "Restart this device?", "Restart", ["systemctl", "reboot"]))
-        self.button(I_POWER, lambda: self.ask(
-            "Shut down this device?", "Shut down", ["systemctl", "poweroff"]))
+        self.power = self.text_button(self.bar, self.open_power, I_MENU)
+        self.power.get_accessible().set_name("Device actions")
         edge = Gtk.Box()
         edge.set_size_request(6, -1)
         self.bar.pack_start(edge, False, False, 0)
+
+        self.power_menu = Gtk.Popover.new(self.power)
+        self.power_menu.set_modal(False)
+        self.power_menu.set_position(Gtk.PositionType.BOTTOM)
+        self.power_menu.set_constrain_to(Gtk.PopoverConstraint.NONE)
+        self.power_menu.get_style_context().add_class("power-menu")
+        self.power_menu.connect("closed", self.power_closed)
+        self.power_surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        dismiss_area = Gtk.EventBox()
+        dismiss_area.set_visible_window(False)
+        dismiss_area.connect("button-press-event", lambda *_: self.dismiss_power())
+        self.power_surface.pack_end(dismiss_area, True, True, 0)
+        self.bar.connect("button-press-event", lambda *_: self.dismiss_power())
+        self.power_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin=4)
+        self.power_menu.add(self.power_box)
+        self.power_item(I_RESTART_INTENT, "Restart Intent", lambda: run(
+            "systemctl", "--user", "restart", "intent.service"))
+        self.power_item(I_LOCK, "Lock", lambda: run("/usr/bin/intent-os-lock"))
+        self.power_item(I_SLEEP, "Sleep", lambda: run("systemctl", "suspend"))
+        self.low_power = self.power_item(I_LOW_POWER, "Low Power Mode", lambda: run(
+            "sudo", "-n", "/usr/lib/intent-os/low-power", "toggle"))
+        self.reboot = self.power_item(I_REBOOT, "Restart device", lambda: self.ask(
+            "Restart this device?", "Restart", ["systemctl", "reboot"]))
+        self.power_item(I_POWER, "Shut down", lambda: self.ask(
+            "Shut down this device?", "Shut down", ["systemctl", "poweroff"]))
+        self.undo = self.power_item(I_UNDO, "Undo update", self.confirm_undo)
+        self.active_menu = None
+        self.version_menu = Gtk.Popover.new(brand_button)
+        self.version_menu.set_modal(False)
+        self.version_menu.set_position(Gtk.PositionType.BOTTOM)
+        self.version_menu.set_constrain_to(Gtk.PopoverConstraint.NONE)
+        self.version_menu.get_style_context().add_class("power-menu")
+        self.version_menu.connect("closed", self.power_closed)
+        grid = Gtk.Grid(column_spacing=16, row_spacing=6, margin=12)
+        self.version_values = []
+        for row, name in enumerate(("Intent OS", "Intent app", "intentd")):
+            grid.attach(Gtk.Label(label=name, xalign=0), 0, row, 1, 1)
+            value = Gtk.Label(xalign=0, selectable=True)
+            grid.attach(value, 1, row, 1, 1)
+            self.version_values.append(value)
+        self.version_menu.add(grid)
 
         # Confirmations replace the bar's contents in place (a separate swaynag
         # bar collided with this overlay and pushed it down the screen).
@@ -273,19 +429,9 @@ class TopBar(Gtk.Window):
         self.bar.pack_start(box, False, False, 0)
         return label
 
-    def button(self, icon, action):
+    def text_button(self, box_parent, action, text=""):
         box = Gtk.EventBox()
-        label = Gtk.Label(label=icon)
-        box.set_size_request(HEIGHT + 6, -1)
-        box.add(label)
-        box.get_style_context().add_class("button")
-        box.connect("button-press-event", lambda *_: action())
-        self.bar.pack_start(box, False, False, 0)
-        return box
-
-    def text_button(self, box_parent, action):
-        box = Gtk.EventBox()
-        label = Gtk.Label()
+        label = Gtk.Label(label=text)
         label.set_margin_start(12)
         label.set_margin_end(12)
         box.add(label)
@@ -293,6 +439,74 @@ class TopBar(Gtk.Window):
         box.connect("button-press-event", lambda *_: action())
         box_parent.pack_start(box, False, False, 0)
         return box
+
+    def open_power(self):
+        self.undo.set_visible(last_update_date() is not None)
+        return self.open_menu(self.power_menu)
+
+    def open_versions(self):
+        if self.active_menu is None:
+            for label, version in zip(self.version_values, versions()):
+                label.set_text(version or "Unavailable")
+        return self.open_menu(self.version_menu)
+
+    def open_menu(self, menu):
+        if self.active_menu is not None:
+            return self.dismiss_power()
+        self.active_menu = menu
+        self.cancel_close()
+        self.remove(self.bar)
+        self.power_surface.pack_start(self.bar, False, False, 0)
+        self.add(self.power_surface)
+        self.power_surface.show_all()
+        self.fix_visibility()
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, True)
+        menu.get_child().show_all()
+        if menu is self.power_menu:
+            self.undo.set_visible(last_update_date() is not None)
+            self.low_power.set_visible(TURBO_CONTROL.is_file())
+            label = self.low_power.get_child().get_children()[1]
+            enabled = LOW_POWER_ENABLED.exists()
+            label.set_text("Low Power Mode (On)" if enabled else "Low Power Mode (Off)")
+        menu.popup()
+        return True
+
+    def dismiss_power(self):
+        if self.active_menu is None:
+            return False
+        self.active_menu.popdown()
+        return True
+
+    def power_item(self, icon, label, action):
+        button = Gtk.Button()
+        button.set_relief(Gtk.ReliefStyle.NONE)
+        button.get_style_context().add_class("button")
+        row = Gtk.Box(spacing=10)
+        row.pack_start(Gtk.Label(label=icon), False, False, 0)
+        row.pack_start(Gtk.Label(label=label, xalign=0), True, True, 0)
+        button.add(row)
+        def activate(_button):
+            self.power_menu.popdown()
+            action()
+
+        button.connect("clicked", activate)
+        self.power_box.pack_start(button, False, False, 0)
+        return button
+
+    def power_closed(self, _menu):
+        self.active_menu = None
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.BOTTOM, False)
+        self.power_surface.remove(self.bar)
+        self.back_to_bar()
+        self.resize(1, HEIGHT)
+        self.cancel_close()
+        self.close_timer = GLib.timeout_add(CLOSE_DELAY_MS, self.close)
+
+    def back_to_bar(self):
+        self.remove(self.get_child())
+        self.add(self.bar)
+        self.bar.show_all()
+        self.fix_visibility()
 
     def ask(self, message, label, command):
         self.asking = command
@@ -307,10 +521,7 @@ class TopBar(Gtk.Window):
 
     def answer(self, yes):
         command, self.asking = self.asking, None
-        self.remove(self.ask_box)
-        self.add(self.bar)
-        self.bar.show_all()
-        self.fix_visibility()
+        self.back_to_bar()
         if yes and command:
             run(*command)
 
@@ -343,7 +554,19 @@ class TopBar(Gtk.Window):
         self.volume.set_text(text)
         self.volume.get_parent().set_visible(bool(text))
 
+    def refresh_brightness(self):
+        text = ""
+        for device in sorted(Path("/sys/class/backlight").glob("*")):
+            level = read_int(device / "actual_brightness")
+            maximum = read_int(device / "max_brightness")
+            if level is not None and maximum:
+                text = f"{I_BRIGHTNESS} {round(100 * level / maximum)}%"
+                break
+        self.brightness.set_text(text)
+        self.brightness.get_parent().set_visible(bool(text))
+
     def peek(self):
+        self.refresh_brightness()
         self.refresh_volume()
         self.open(refresh=False)
         self.cancel_close()
@@ -352,6 +575,7 @@ class TopBar(Gtk.Window):
 
     def refresh(self):
         self.network.set_text(network_text())
+        self.refresh_brightness()
         self.refresh_volume()
         bat = battery_text()
         self.battery.set_text(bat)
@@ -359,11 +583,12 @@ class TopBar(Gtk.Window):
         self.clock.set_text(time.strftime("%a %-d %b  %H:%M"))
         self.undo.set_visible(last_update_date() is not None)
         self.awake.get_parent().set_visible(os.path.exists(AWAKE))
-        ctx = self.reboot.get_style_context()
-        if os.path.exists("/run/intent-os/reboot-required"):
-            ctx.add_class("hint")
-        else:
-            ctx.remove_class("hint")
+        for button in (self.power, self.reboot):
+            ctx = button.get_style_context()
+            if os.path.exists("/run/intent-os/reboot-required"):
+                ctx.add_class("hint")
+            else:
+                ctx.remove_class("hint")
         return True
 
     def open(self, refresh=True):
@@ -378,9 +603,9 @@ class TopBar(Gtk.Window):
         self.fix_visibility()
 
     def fix_visibility(self):
+        self.brightness.get_parent().set_visible(bool(self.brightness.get_text()))
         self.battery.get_parent().set_visible(bool(self.battery.get_text()))
         self.volume.get_parent().set_visible(bool(self.volume.get_text()))
-        self.undo.set_visible(last_update_date() is not None)
         self.awake.get_parent().set_visible(os.path.exists(AWAKE))
 
     def on_leave(self, _widget, event):
@@ -395,11 +620,11 @@ class TopBar(Gtk.Window):
             self.close_timer = 0
 
     def close(self):
-        if holding() or self.asking:
+        if holding() or self.asking or self.active_menu is not None:
             return True  # check again once the menu or question closes
         self.close_timer = 0
-        if self.get_child() is self.bar:
-            self.remove(self.bar)
+        if self.get_child() is not self.strip:
+            self.remove(self.get_child())
             self.add(self.strip)
             self.strip.show()
             self.resize(1, TRIGGER)

@@ -1,0 +1,5 @@
+[Unit]
+Description=Report Intent window placement to the console (QEMU boot test only)
+
+[Service]
+ExecStart=/usr/lib/intent-os/test-report

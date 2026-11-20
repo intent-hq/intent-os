@@ -39,7 +39,8 @@ Press **Cmd+Shift+4** (or **Shift+Print Screen**) to select and copy an area.
 
 On supported MacBook Air keyboards, Command acts like Ctrl for most shortcuts. **Cmd+C/V/X**
 still copy, paste, and cut in Intent. **Cmd+Shift+V** pastes as plain text in
-the composer. **Ctrl+Cmd+Q** locks the screen.
+the composer. **Ctrl+Cmd+Q** locks the screen. Each Intent window fills the screen;
+**Cmd+Left** and **Cmd+Right** go to the previous and next window.
 
 ## Install on an Intel Mac with the T2 chip (2018–2020)
 
@@ -81,6 +82,12 @@ silicon Mac, use the `aarch64` one.
 
 The aarch64 build uses Arch Linux ARM. It updates from Arch Linux ARM mirrors, which have
 no tested snapshot like the x86_64 build.
+
+Intent OS logs power and CPU activity once a minute in
+`/var/lib/intent-energy/energy.sqlite3`. The local database requires root access.
+It records battery draw, brightness, CPU package power when available, and CPU
+time for the 15 busiest process names. It does not store command lines.
+Open `http://127.0.0.1:40339` on the device to see the last 24 hours.
 
 ## Layout
 

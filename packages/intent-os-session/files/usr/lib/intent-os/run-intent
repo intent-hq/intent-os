@@ -9,10 +9,16 @@ app="$HOME/.local/lib/intent-os/Intent.AppImage"
 export INTENT_HIDE_MENU_BAR=1
 # There is no system browser: Intent opens every web link in its own browser panel.
 export INTENT_NO_SYSTEM_BROWSER=1
+# Passkeys in the browser panel: phone (QR over Bluetooth), security keys, and
+# device passkeys confirmed with the PIN (/etc/pam.d/intent-passkey).
+export INTENT_BROWSER_PASSKEYS=1
+# Let Intent's JavaScript heaps grow to 7 GB before V8 gives up; the default
+# limit is lower, and a long session can hit it and stall in garbage collection.
+heap_flags=--js-flags=--max-old-space-size=7168
 child="" stopping=0
 trap 'stopping=1; [[ -n $child ]] && kill -TERM "$child" 2>/dev/null' TERM INT
 
-"$app" "$@" &
+"$app" "$heap_flags" "$@" &
 child=$!
 status=0
 while kill -0 "$child" 2>/dev/null; do
