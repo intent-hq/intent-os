@@ -9,6 +9,8 @@ app="$HOME/.local/lib/intent-os/Intent.AppImage"
 export INTENT_HIDE_MENU_BAR=1
 # There is no system browser: Intent opens every web link in its own browser panel.
 export INTENT_NO_SYSTEM_BROWSER=1
+# Use the daemon-backed picker for file and directory selection.
+export INTENT_IN_APP_PICKER=1
 # Passkeys in the browser panel: phone (QR over Bluetooth), security keys, and
 # device passkeys confirmed with the PIN (/etc/pam.d/intent-passkey).
 export INTENT_BROWSER_PASSKEYS=1
