@@ -185,6 +185,18 @@ stateDiagram-v2
 5. **Tests:** by hand on a T2 Mac. The QEMU boot test covers the T2 kernel on generic
    hardware through the live ISO.
 
+## 7b. Chuwi MiniBook X (untested)
+
+1. **Screen.** The panel is portrait-native (1200×1920 MIPI-DSI) and mounted sideways.
+   On SMBIOS vendor `CHUWI*` and product `MiniBook X`, the installer's GRUB menu and the
+   installed system add `video=DSI-1:panel_orientation=right_side_up fbcon=rotate:1`
+   (the values U300 owners use). sway applies the kernel's panel orientation itself.
+2. **Touch.** The touchscreen is USB, which sway does not treat as built in.
+   `session-start` maps every touchscreen to the single built-in output, so touch
+   follows the rotation.
+3. **Not covered:** tablet mode. Folding does not disable the keyboard and touchpad, and
+   there is no on-screen keyboard.
+
 ## 8. aarch64 (UTM on Apple silicon, UEFI ARM machines)
 
 1. **Same shape as x86_64:** a netinstall ISO with the same installer. One ISO per

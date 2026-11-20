@@ -4,6 +4,10 @@ vars="XDG_SESSION_ID WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TY
 systemctl --user import-environment $vars
 # shellcheck disable=SC2086
 dbus-update-activation-environment --systemd $vars
+# sway maps only platform touchscreens to the built-in screen. Map USB ones
+# too (Chuwi MiniBook X), so touch follows the screen's rotation.
+builtin=$(swaymsg -t get_outputs | jq -r '[.[].name | select(test("^(eDP|LVDS|DSI)-"))] | if length == 1 then .[0] else empty end')
+[ -n "$builtin" ] && swaymsg "input type:touch map_to_output $builtin" >/dev/null
 # Lock first. Intent loads behind the lock while the owner enters the PIN.
 intent-os-lock
 # shellcheck disable=SC2086
