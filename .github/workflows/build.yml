@@ -1,6 +1,6 @@
 name: build
 
-# Every image must install and boot into Intent in QEMU before it ships.
+# Every package release must install and boot into Intent in QEMU before it ships.
 # The nightly run moves the Arch snapshot to yesterday; publishing that
 # build advances the update channel that devices follow.
 on:
@@ -30,8 +30,11 @@ jobs:
     outputs:
       build_id: ${{ steps.ids.outputs.build_id }}
       archive_date: ${{ steps.ids.outputs.archive_date }}
+      installer_tag: ${{ steps.installer.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Lint
         run: make lint
       - name: Pick snapshot date and build id
@@ -52,6 +55,26 @@ jobs:
           echo "archive_date=$d" >> "$GITHUB_OUTPUT"
           echo "build_id=$(date -u +%Y%m%d%H%M)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      - name: Select a reusable installer
+        id: installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE_DATE: ${{ steps.ids.outputs.archive_date }}
+        run: |
+          # Empty output selects a fresh installer build.
+          [[ $GITHUB_EVENT_NAME != workflow_dispatch ]] || exit 0
+          release=$(gh release view --json tagName,body) || exit 0
+          tag=$(jq -r .tagName <<< "$release")
+          [[ $tag == iso-* ]] || exit 0
+          archive=$(jq -r .body <<< "$release" | sed -nE 's/.*Arch snapshot ([0-9]{4}\/[0-9]{2}\/[0-9]{2}).*/\1/p')
+          [[ $archive == "$ARCHIVE_DATE" ]] || exit 0
+          git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null || exit 0
+          # Compare to the last published installer, including changes from earlier pushes.
+          if git diff --quiet "refs/tags/$tag" HEAD -- . \
+            ':(exclude)packages/**' ':(exclude)docs/**' ':(exclude)README.md'; then
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     needs: ids
     runs-on: ubuntu-24.04
@@ -62,10 +85,10 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
-      - name: Build packages and ISO
+      - name: Build packages and rebuild the installer when needed
         env:
           INTENT_OS_SIGNING_KEY: ${{ secrets.INTENT_OS_SIGNING_KEY }}
-        run: make image ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
+        run: make ${{ needs.ids.outputs.installer_tag != '' && 'packages' || 'image' }} ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
       - uses: actions/upload-artifact@v4
         with:
           name: image
@@ -78,7 +101,7 @@ jobs:
           compression-level: 0
 
   smoke:
-    needs: build
+    needs: [ids, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -94,6 +117,12 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Install QEMU
         run: sudo apt-get update -q && sudo apt-get install -yq qemu-system-x86 qemu-utils ovmf socat imagemagick
+      - name: Download the published x86 installer
+        if: needs.ids.outputs.installer_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INSTALLER_TAG: ${{ needs.ids.outputs.installer_tag }}
+        run: gh release download "$INSTALLER_TAG" --pattern '*-x86_64.iso' --dir out/iso
       - name: Install and boot into Intent
         timeout-minutes: 50
         run: make smoke
@@ -113,11 +142,12 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Build arm64 packages and ISO
+      - name: Build arm64 packages and rebuild the installer when needed
         env:
           INTENT_OS_SIGNING_KEY: ${{ secrets.INTENT_OS_SIGNING_KEY }}
-        run: make image-arm64 ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
+        run: make ${{ needs.ids.outputs.installer_tag != '' && 'packages-arm64' || 'image-arm64' }} ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
       - name: Build the Apple silicon (Asahi) image
+        if: needs.ids.outputs.installer_tag == ''
         env:
           INTENT_OS_SIGNING_KEY: ${{ secrets.INTENT_OS_SIGNING_KEY }}
         run: make image-asahi ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
@@ -187,6 +217,7 @@ jobs:
           name: image-arm64
           path: out-arm64
       - name: Publish ISOs
+        if: needs.ids.outputs.installer_tag == ''
         run: |
           cat out/iso/SHA256SUMS out-arm64/iso/SHA256SUMS out-arm64/asahi/SHA256SUMS.apple-silicon > SHA256SUMS
           gh release create "iso-$BUILD_ID" out/iso/*.iso out-arm64/iso/*.iso SHA256SUMS \
@@ -205,5 +236,5 @@ jobs:
       - name: Advance update channel
         run: |
           gh release view channel >/dev/null 2>&1 || \
-            gh release create channel --title "Intent OS update channel" --notes "Newest build that passed the boot test." --latest=false
+            gh release create channel --title "Intent OS update channel" --notes "Newest package build that passed the boot test." --latest=false
           gh release upload channel out/channel.env --clobber
