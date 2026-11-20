@@ -96,6 +96,12 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    turns passkeys on in Intent (off by default elsewhere). With no TPM, those keys are on disk, encrypted
    with a key made from the PIN: a stolen disk allows offline PIN guessing, so a long
    PIN is safer.
+11. **File choosers.** The session has no desktop portal, so native file dialogs open
+   nothing. `run-intent` sets `INTENT_IN_APP_PICKER=1`, and Intent uses its own picker for
+   open, save, import, export and attachment choosers, website uploads and downloads in
+   its browser panel (needs a cloudlands-fe build with intent-hq/cloudlands-fe#4830).
+   Not covered: a site's File System Access picker (`showOpenFilePicker`) and uploads
+   inside cross-origin iframes.
 
 ## 5. Supervision
 
