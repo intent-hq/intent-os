@@ -220,9 +220,30 @@ def last_update_date():
     return "recently"
 
 
+def battery_eta(path, charging):
+    """Use matching capacity and rate units, preferring the driver's average."""
+    for kind, rate_kind in (("energy", "power"), ("charge", "current")):
+        now = read_int(f"{path}/{kind}_now")
+        full = read_int(f"{path}/{kind}_full")
+        if now is None or now < 0 or not full or full < 0:
+            continue
+        remaining = max(0, full - now) if charging else now
+        if not remaining:
+            return ""
+        rate = read_int(f"{path}/{rate_kind}_avg") or read_int(f"{path}/{rate_kind}_now")
+        if rate:
+            minutes = max(1, round(60 * remaining / abs(rate)))
+            hours, minutes = divmod(minutes, 60)
+            duration = f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
+            return f" · {duration} {'to full' if charging else 'left'}"
+    return ""
+
+
 def battery_text():
     base = "/sys/class/power_supply"
-    for ps in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+    supplies = sorted(os.listdir(base)) if os.path.isdir(base) else []
+    plugged_in = any(read_int(f"{base}/{ps}/online") == 1 for ps in supplies)
+    for ps in supplies:
         path = f"{base}/{ps}"
         try:
             with open(f"{path}/type") as f:
@@ -235,11 +256,14 @@ def battery_text():
         cap, worn = battery_percent(path)
         if cap is None:
             continue
-        if worn:
-            return f"{I_BATTERY_ALERT} {cap}%"
-        if status == "Charging":
-            return f"{I_CHARGING} {cap}%"
-        return f"{I_BATTERY[max(0, min(9, cap // 10 - 1))]} {cap}%"
+        charging = status == "Charging"
+        if plugged_in or charging:
+            icon = I_CHARGING
+            estimate = battery_eta(path, charging=True) if charging else ""
+        else:
+            icon = I_BATTERY_ALERT if worn else I_BATTERY[max(0, min(9, cap // 10 - 1))]
+            estimate = battery_eta(path, charging=False) if status == "Discharging" else ""
+        return f"{icon} {cap}%{estimate}"
     return ""
 
 
