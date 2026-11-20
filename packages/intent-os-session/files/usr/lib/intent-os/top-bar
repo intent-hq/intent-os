@@ -242,11 +242,13 @@ def battery_eta(path, charging, rates):
             # Key-triggered refreshes must not give a brief burst extra weight.
             if not rates or sample_time - rates[-1][0] >= 4:
                 rates.append((sample_time, abs(rate), key))
+            if sample_time - rates[0][0] < 60:
+                return " · Estimating…"
             average_rate = sum(value for _, value, _ in rates) / len(rates)
-            minutes = max(1, round(60 * remaining / average_rate))
+            minutes = max(5, 5 * round(12 * remaining / average_rate))
             hours, minutes = divmod(minutes, 60)
             duration = f"{hours}h {minutes:02d}m" if hours else f"{minutes}m"
-            return f" · {duration} {'to full' if charging else 'left'}"
+            return f" · ~{duration} {'to full' if charging else 'left'}"
     return ""
 
 
