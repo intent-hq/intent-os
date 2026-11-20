@@ -23,6 +23,7 @@ package() {
   chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
   install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
   ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
+  ln -s ../intent-os-low-power.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-os-low-power.service"
   ln -s ../intent-energy-log.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-energy-log.service"
   # Boot test only; it exits at once unless QEMU passes opt/intent-os/test.
   ln -s ../intent-os-test-report.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-os-test-report.service"
