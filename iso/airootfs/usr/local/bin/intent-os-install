@@ -412,6 +412,12 @@ configure_system() {
       cmdline+=" console=ttyS0,115200 console=tty0"
     fi
   fi
+  # The Chuwi MiniBook X has a portrait panel mounted sideways. sway follows the
+  # kernel's panel orientation (keep in sync with the installer's GRUB menu).
+  if [[ $(cat /sys/class/dmi/id/sys_vendor 2>/dev/null) == CHUWI* ]] \
+    && [[ $(cat /sys/class/dmi/id/product_name 2>/dev/null) =~ ^MiniBook\ X\ *$ ]]; then
+    cmdline+=" video=DSI-1:panel_orientation=right_side_up fbcon=rotate:1"
+  fi
   if [[ $(hardware_packages) == intent-os-hw-t2 ]]; then
     cmdline+=" intel_iommu=on iommu=pt pm_async=off"
     # Boot the T2 kernel by default; Arch's kernel stays as a fallback.

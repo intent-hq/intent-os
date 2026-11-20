@@ -226,6 +226,12 @@ build_iso() {
   else
     cp -r /usr/share/archiso/configs/baseline "$profile"
     build_live_package
+    # The boot menu reads the machine model (SMBIOS) to set per-model kernel
+    # arguments; archiso's GRUB image leaves that module out.
+    cp "$(command -v mkarchiso)" "$WORK/mkarchiso"
+    mkarchiso=$WORK/mkarchiso
+    sed -i 's/grubmodules=(all_video /&smbios /' "$mkarchiso"
+    grep -q 'grubmodules=(all_video smbios ' "$mkarchiso" || { echo "error: could not add smbios to mkarchiso GRUB modules" >&2; exit 1; }
   fi
 
   # Our own package list and services; drop baseline's cloud and VM tooling.
@@ -276,6 +282,31 @@ GRUB
     # entry) was invisible on Macs. Draw the menu with the graphics terminal.
     sed -i 's/^\(\s*\)terminal_output console$/\1terminal_output gfxterm/' "$profile/grub/grub.cfg"
     grep -q 'terminal_output gfxterm' "$profile/grub/grub.cfg" || { echo "error: GRUB menu is not on gfxterm" >&2; exit 1; }
+    # The Chuwi MiniBook X has a portrait panel mounted sideways. Tell Linux,
+    # so the installer console is upright (keep in sync with intent-os-install).
+    # GRUB variables below are written literally, not expanded by this shell.
+    # shellcheck disable=SC2016
+    sed -i '/^# Set default menu entry/i\
+insmod smbios\
+insmod regexp\
+if smbios --type 1 --get-string 4 --set intent_os_vendor; then\
+if smbios --type 1 --get-string 5 --set intent_os_product; then\
+if regexp "^CHUWI" "$intent_os_vendor"; then\
+if regexp "^MiniBook X *\\$" "$intent_os_product"; then\
+set intent_os_hw_args="video=DSI-1:panel_orientation=right_side_up fbcon=rotate:1"\
+fi\
+fi\
+fi\
+fi\
+' "$profile/grub/grub.cfg"
+    # shellcheck disable=SC2016
+    sed -i 's/archisosearchuuid=%ARCHISO_UUID%/& ${intent_os_hw_args}/' "$profile/grub/grub.cfg"
+    # shellcheck disable=SC2016
+    if ! grep -q 'set intent_os_hw_args=' "$profile/grub/grub.cfg" \
+      || ! grep -qF 'archisosearchuuid=%ARCHISO_UUID% ${intent_os_hw_args}' "$profile/grub/grub.cfg"; then
+      echo "error: could not add per-model kernel arguments to the GRUB menu" >&2
+      exit 1
+    fi
   fi
 
   # Serial console for the QEMU boot test. tty0 comes last so it is the main
