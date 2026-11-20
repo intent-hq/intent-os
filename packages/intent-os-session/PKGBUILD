@@ -12,6 +12,8 @@ depends=(intent-os-base intent-appimage sway swayidle hyprlock swaylock greetd x
 depends+=(grim slurp wl-clipboard)
 # Map Command shortcuts on Apple keyboards at the Linux input layer.
 depends+=(keyd)
+# Record local battery and CPU diagnostics in SQLite via Python's standard library.
+depends+=(python)
 # Passkeys in Intent's browser: a phone signs in over Bluetooth LE (FIDO hybrid,
 # QR code), and /etc/pam.d/intent-passkey checks the PIN for device passkeys.
 depends+=(bluez bluez-utils)
@@ -21,6 +23,7 @@ package() {
   chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
   install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
   ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
+  ln -s ../intent-energy-log.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-energy-log.service"
   # Boot test only; it exits at once unless QEMU passes opt/intent-os/test.
   ln -s ../intent-os-test-report.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-os-test-report.service"
   ln -s ../bluetooth.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/bluetooth.service"
