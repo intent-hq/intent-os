@@ -41,6 +41,7 @@ I_REBOOT = "\U000f0709"
 I_LOW_POWER = "\U000f124d"
 I_SLEEP = "\U000f04b2"
 I_LOCK = "\U000f033e"
+I_UPDATE = "\U000f0453"
 I_UNDO = "\U000f02da"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
@@ -364,6 +365,10 @@ class TopBar(Gtk.Window):
             "Restart this device?", "Restart", ["systemctl", "reboot"]))
         self.power_item(I_POWER, "Shut down", lambda: self.ask(
             "Shut down this device?", "Shut down", ["systemctl", "poweroff"]))
+        self.power_item(I_UPDATE, "Update Intent OS", lambda: self.ask(
+            "Check for and install Intent OS updates?", "Update",
+            ["sudo", "-n", "systemd-run", "--unit=intent-os-manual-update",
+             "--collect", "/usr/lib/intent-os/update", "--now"]))
         self.undo = self.power_item(I_UNDO, "Undo update", self.confirm_undo)
         self.active_menu = None
         self.version_menu = Gtk.Popover.new(brand_button)
