@@ -463,7 +463,11 @@ pacman-key --populate "$keyring"
 [[ -f /usr/share/pacman/keyrings/asahi-alarm.gpg ]] && pacman-key --populate asahi-alarm
 mkinitcpio -P
 if [[ -f /boot/Image && ! -f /boot/vmlinuz-linux ]]; then ln -f /boot/Image /boot/vmlinuz-linux; fi
-grub-install --target="$grub_target" --efi-directory=/efi --boot-directory=/boot --removable --no-nvram
+# Image builds install onto a bare filesystem image, so grub-install would leave
+# out the partition-table module; the real disk is GPT (Apple silicon: GRUB then
+# stops at "no such device" in grub rescue).
+grub-install --target="$grub_target" --efi-directory=/efi --boot-directory=/boot --removable --no-nvram \
+  --modules="part_gpt part_msdos"
 mkdir -p /efi/intent-os
 grub-editenv /efi/intent-os/grubenv create
 grub-editenv /efi/intent-os/grubenv set boot_success=1
