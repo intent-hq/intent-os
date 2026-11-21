@@ -1,5 +1,6 @@
 #!/bin/sh
-# Seed the owner's self-updating Intent AppImage and its first-run prefs.
+# Seed the owner's self-updating Intent AppImage. Intent OS defaults (menu bar,
+# dock, alpha channel, browser pages) come from Intent itself under INTENT_OS=1.
 set -eu
 app="$HOME/.local/lib/intent-os/Intent.AppImage"
 if [ ! -x "$app" ]; then
@@ -14,16 +15,9 @@ if [ -e "$pidfile" ] && ! pgrep -u "$(id -u)" -x intentd >/dev/null; then
 fi
 dir="${XDG_CONFIG_HOME:-$HOME/.config}/intent-cloudlands"
 prefs="$dir/local-prefs.json"
-mkdir -p "$dir"
 # Preserve preferences seeded by older OS releases at the previous path.
 legacy="$HOME/.config/Intent/local-prefs.json"
 if [ ! -s "$prefs" ] && [ -s "$legacy" ]; then
+  mkdir -p "$dir"
   cp "$legacy" "$prefs"
 fi
-[ -s "$prefs" ] || echo '{}' > "$prefs"
-tmp=$(mktemp "$dir/.local-prefs.XXXXXX")
-trap 'rm -f "$tmp"' EXIT HUP INT TERM
-jq '
-  {updateChannel: "alpha", menuBarAutoHide: true, dockEnabled: false, browserViewsInMainEnabled: true} + .
-' "$prefs" > "$tmp"
-mv "$tmp" "$prefs"

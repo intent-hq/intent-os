@@ -31,7 +31,7 @@ Few changes to `cloudlands-fe` or `intentd`: a hidden-menu-bar option and the si
 | Intent build | The released AppImage. `intent-appimage` ships it in `/usr/share/intent-os/`; `prepare-intent` copies it to `~/.local/lib/intent-os/Intent.AppImage` on first start. `bump-intent.yml` keeps the seed on the newest alpha. |
 | Intent updates | Intent's own updater (electron-updater, AppImage path) replaces the owner's copy and relaunches. The owner sees Intent's normal update prompt. The `.deb` path cannot work here: it needs `dpkg`. |
 | `intentd` | Electron starts its bundled sidecar as usual. |
-| Channel | First start writes `updateChannel: "alpha"` (newest Intent) and `menuBarAutoHide: true` to `~/.config/Intent/local-prefs.json`. The owner can change the channel in settings. |
+| Intent OS mode | `run-intent` sets `INTENT_OS=1`. Intent then opens web links in its own browser, uses its own file picker, turns on passkeys, shows notifications inside Intent, hides file-manager and external-editor actions, and defaults to the alpha channel, a hidden menu bar, no dock and browser pages in the main process. A setting the owner saved wins. |
 | Secrets | No keyring daemon. Electron falls back to its basic store; `intentd` uses none. |
 
 ## 4. Session
@@ -92,12 +92,12 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    code and Bluetooth LE, so `bluez` runs (`bluetooth.service`; skipped when there is no
    adapter). Device passkeys are confirmed with the PIN through PAM service
    `intent-passkey` (same stack as the lock screen); Intent offers them only when
-   `/etc/pam.d/intent-passkey` exists. `run-intent` sets `INTENT_BROWSER_PASSKEYS=1`, which
-   turns passkeys on in Intent (off by default elsewhere). With no TPM, those keys are on disk, encrypted
+   `/etc/pam.d/intent-passkey` exists. `INTENT_OS=1` turns passkeys on in Intent (off by
+   default elsewhere). With no TPM, those keys are on disk, encrypted
    with a key made from the PIN: a stolen disk allows offline PIN guessing, so a long
    PIN is safer.
 11. **File choosers.** The session has no desktop portal, so native file dialogs open
-   nothing. `run-intent` sets `INTENT_IN_APP_PICKER=1`, and Intent uses its own picker for
+   nothing. Under `INTENT_OS=1` Intent uses its own picker for
    open, save, import, export and attachment choosers, website uploads and downloads in
    its browser panel (needs a cloudlands-fe build with intent-hq/cloudlands-fe#4830).
    Not covered: a site's File System Access picker (`showOpenFilePicker`) and uploads
