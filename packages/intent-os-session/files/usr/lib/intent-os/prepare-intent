@@ -24,6 +24,6 @@ fi
 tmp=$(mktemp "$dir/.local-prefs.XXXXXX")
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 jq '
-  {updateChannel: "alpha", menuBarAutoHide: true, dockEnabled: false} + .
+  {updateChannel: "alpha", menuBarAutoHide: true, dockEnabled: false, browserViewsInMainEnabled: true} + .
 ' "$prefs" > "$tmp"
 mv "$tmp" "$prefs"
