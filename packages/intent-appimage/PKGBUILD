@@ -3,7 +3,7 @@
 # itself (alpha channel by default). CI bumps pkgver and sha256sums daily
 # from the cloudlands-releases alpha feed.
 pkgname=intent-appimage
-pkgver=2.363.0
+pkgver=2.365.0
 pkgrel=1
 pkgdesc="Intent AppImage (seed for the self-updating owner copy)"
 arch=(x86_64 aarch64)
@@ -15,8 +15,8 @@ _base="https://github.com/intent-hq/cloudlands-releases/releases/download/v${pkg
 source_x86_64=("Intent-${pkgver}.AppImage::${_base}/Intent-${pkgver}.AppImage")
 source_aarch64=("Intent-${pkgver}.AppImage::${_base}/Intent-${pkgver}-arm64.AppImage")
 noextract=("Intent-${pkgver}.AppImage")
-sha256sums_x86_64=('32cac67e0dba9350130900345dba1e1823d72863fc92893c298922bae0015e5b')
-sha256sums_aarch64=('a715a9de11560c225d2d83ddeaa4f70de056cf03dc3583dc43909721f26349c3')
+sha256sums_x86_64=('f9ce8fd2966d4433a208926d3b3ab3960590078ba530125dd8b1c2e40bdcabfc')
+sha256sums_aarch64=('251910dd73e6659e3097670474b4e8a98a5de331332ff7609761a8fc49bf10fc')
 
 package() {
   install -Dm755 "Intent-${pkgver}.AppImage" "$pkgdir/usr/share/intent-os/Intent.AppImage"
