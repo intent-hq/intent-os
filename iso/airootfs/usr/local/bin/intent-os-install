@@ -348,8 +348,21 @@ install_packages() {
       > "$MNT/etc/mkinitcpio.conf.d/zz-intent-os-image.conf"
   fi
   [[ $hw == "$APPLE_SILICON" ]] && finish_asahi_esp
-  genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' >> "$MNT/etc/fstab"
+  # In a container (image builds) udev has no UUIDs for the loop devices, so
+  # genfstab writes /dev/loopN, and it copies the build host's active swap.
+  # Name the partitions by UUID read from their superblocks, and drop swap
+  # entries (Intent OS swaps to zram).
+  local root_uuid esp_uuid
+  root_uuid=$(blkid -p -s UUID -o value "$ROOT")
+  esp_uuid=$(blkid -p -s UUID -o value "$ESP")
+  [[ -n $root_uuid && -n $esp_uuid ]] || die "Could not read the partition UUIDs."
+  genfstab -U "$MNT" | sed -E 's/subvolid=[0-9]+,?//; s/,+([[:space:]])/\1/' |
+    awk -v root="$ROOT" -v esp="$ESP" -v ru="UUID=$root_uuid" -v eu="UUID=$esp_uuid" '
+      /^[[:space:]]*#/ || NF < 3 { print; next }
+      $3 == "swap" { next }
+      $1 == root { $1 = ru } $1 == esp { $1 = eu } { print }' >> "$MNT/etc/fstab"
   sed -i 's/compress-force=zstd:15/compress=zstd:1/' "$MNT/etc/fstab"
+  if grep -Eq '^/dev/loop' "$MNT/etc/fstab"; then die "fstab still names a loop device."; fi
   # The Asahi installer grows the root partition; grow the filesystem to match.
   if [[ $hw == "$APPLE_SILICON" ]]; then
     sed -i -E '/[[:space:]]\/[[:space:]]+btrfs/ s/(subvol=\/@)/\1,x-systemd.growfs/' "$MNT/etc/fstab"
