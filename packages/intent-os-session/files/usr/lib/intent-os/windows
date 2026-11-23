@@ -8,6 +8,11 @@
 # it floats at the top-left of the main screen. sway announces every
 # window as a tiled one and floats a fixed-size window (the dock) only after
 # that, so the window is checked again here, as it is now, before it moves.
+#
+# The sway rule puts a new dock at absolute 0,0, where Intent sizes it for the
+# screen at the layout origin. When the screens are rearranged, sway moves the
+# dock with its screen, so it goes back to 0,0 here (sway 1.7 has no output
+# event: the layout is read every 2 seconds).
 set -u
 is_intent='((.app_id // "") | test("intent"; "i"))
   or ((.window_properties.class // "") | test("intent"; "i"))'
@@ -33,6 +38,19 @@ place() {
   swaymsg -q "[con_id=$id] move container to workspace number $target; workspace number $target" ||
     echo "intent-os-windows: could not move window $id to workspace $target" >&2
 }
+
+follow_screens() {
+  local last="" now
+  while sleep 2; do
+    now=$(swaymsg -r -t get_outputs | jq -c '[.[] | select(.active) | {name, rect}]') || continue
+    if [[ -n $last && $now != "$last" ]]; then
+      # No dock open is fine: the criteria match nothing.
+      swaymsg -q '[app_id="(?i)intent" title="^Intent Dock$"] move absolute position 0 0' 2>/dev/null
+    fi
+    last=$now
+  done
+}
+follow_screens &
 
 swaymsg -r -m -t subscribe '["window"]' |
   jq --unbuffered -r "select(.change == \"new\") | .container
