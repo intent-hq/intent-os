@@ -51,7 +51,10 @@ the composer. **Ctrl+Cmd+Q** locks the screen. Each Intent window fills the scre
    the installer copies the Wi-Fi firmware from it, then erases the disk.
 3. Continue as on the MacBook Air.
 
-## Install on an Apple silicon Mac (M1, M2) — untested
+## Install on an Apple silicon Mac (M1, M2)
+
+Intent OS has been tested running directly on an M1 Max MacBook Pro
+(`MacBookPro18,4`). Other M1 and M2 models are unverified.
 
 Apple silicon Macs cannot start from a USB stick. Intent OS installs next to macOS with
 the Asahi Linux installer. In macOS Terminal run:

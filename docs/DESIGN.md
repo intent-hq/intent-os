@@ -229,8 +229,9 @@ stateDiagram-v2
    and the boot-ok flag work as on PCs.
 4. **First boot:** PIN and time zone only (the system is installed); Wi-Fi from the top
    bar.
-5. **Not covered:** M3 and newer (Asahi does not support them yet). **Untested:** no VM
-   runs this boot chain; test by hand on an M1 or M2 Mac.
+5. **Hardware testing:** Intent OS has run directly on an M1 Max MacBook Pro
+   (`MacBookPro18,4`). Other M1 and M2 models are unverified. M3 and newer are
+   outside the current support scope.
 
 ## 9. Later
 
