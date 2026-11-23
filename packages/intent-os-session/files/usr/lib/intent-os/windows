@@ -5,9 +5,9 @@
 # windows (dialogs) stay on their workspace. sway removes empty workspaces.
 #
 # The dock (title "Intent Dock", see the sway config) never gets a workspace:
-# it floats at the top-left of workspace 1. sway announces every window as a
-# tiled one and floats a fixed-size window (the dock) only after that, so the
-# window is checked again here, as it is now, before it moves.
+# it floats at the top-left of the main screen. sway announces every
+# window as a tiled one and floats a fixed-size window (the dock) only after
+# that, so the window is checked again here, as it is now, before it moves.
 set -u
 is_intent='((.app_id // "") | test("intent"; "i"))
   or ((.window_properties.class // "") | test("intent"; "i"))'
