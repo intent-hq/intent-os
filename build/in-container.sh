@@ -46,6 +46,17 @@ prepare() {
   pacman-key --init >/dev/null
   if [[ $ARCH == aarch64 ]]; then
     pacman-key --populate archlinuxarm >/dev/null
+    # Avoid mirror.archlinuxarm.org: per-request Geo-IP redirects can mix a
+    # fresh package database with a stale backend mirror (404). Direct mirrors
+    # keep database and package downloads on the same server, with failover.
+    cat > /etc/pacman.d/mirrorlist <<'MIRRORS'
+Server = http://fl.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://ca.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://nj.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://de.mirror.archlinuxarm.org/$arch/$repo
+Server = http://de4.mirror.archlinuxarm.org/$arch/$repo
+Server = http://dk.mirror.archlinuxarm.org/$arch/$repo
+MIRRORS
     # The imported rootfs keeps CheckSpace, which fails on overlay mounts.
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
     pacman -Syu --noconfirm --needed base-devel git arch-install-scripts btrfs-progs \
