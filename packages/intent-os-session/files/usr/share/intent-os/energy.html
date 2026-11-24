@@ -88,12 +88,20 @@ function chart(samples, [key, label, unit, floor], end) {
   plot(samples.map(sample => ({unix_time: sample.unix_time, value: sample[key]})),
     value => 112 - 100 * value / top, '');
   if (charge) {
-    const rates = samples.map(({unix_time, battery_percent}, index) => {
+    let start = 0;
+    const rates = samples.map((sample, index) => {
+      const {unix_time, on_ac, battery_percent} = sample;
       const previous = samples[index - 1];
-      const seconds = unix_time - previous?.unix_time;
-      const value = seconds > 0 && seconds < 120 &&
-        Number.isFinite(battery_percent) && Number.isFinite(previous.battery_percent)
-        ? (battery_percent - previous.battery_percent) * 60 / seconds : null;
+      if (!previous || unix_time - previous.unix_time >= 120 ||
+          previous.on_ac !== on_ac || !Number.isFinite(previous.battery_percent) ||
+          !Number.isFinite(battery_percent)) {
+        start = index;
+      }
+      while (unix_time - samples[start].unix_time > 300) start++;
+      const first = samples[start];
+      const seconds = unix_time - first.unix_time;
+      const value = seconds >= 180 && Number.isFinite(battery_percent)
+        ? (battery_percent - first.battery_percent) * 60 / seconds : null;
       return {unix_time, value};
     });
     const limit = Math.max(0.5, ...rates.map(({value}) => Math.ceil(Math.abs(value) * 2) / 2));
@@ -116,7 +124,7 @@ async function refresh() {
     latest.textContent = last ? [
       'Last 24 hours', new Date(last.unix_time * 1000).toLocaleTimeString(),
       last.on_ac === 1 ? 'Plugged in' : last.on_ac === 0 ? 'On battery' : 'Power source unknown',
-      last.battery_percent == null ? null : `${last.battery_percent}% charge`,
+      last.battery_percent == null ? null : `${last.battery_percent.toFixed(1)}% charge`,
       `${data.samples.length} samples`,
     ].filter(Boolean).join(' · ') : 'Waiting for the first sample.';
     charts.replaceChildren(...metrics.map(metric => chart(data.samples, metric, now)));

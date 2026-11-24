@@ -73,6 +73,18 @@ def number(path):
         return None
 
 
+def battery_percent(battery):
+    if battery is None:
+        return None
+    for kind in ("energy", "charge"):
+        now = number(battery / f"{kind}_now")
+        full = number(battery / f"{kind}_full")
+        if now is not None and now >= 0 and full is not None and full > 0:
+            return min(100.0, 100.0 * now / full)
+    capacity = number(battery / "capacity")
+    return max(0, min(100, capacity)) if capacity is not None else None
+
+
 def supply_type(path):
     try:
         return (path / "type").read_text().strip()
@@ -135,7 +147,7 @@ while True:
 
     online = [value for path in chargers if (value := number(path)) is not None]
     ac = int(any(online)) if online else None
-    percent = number(battery / "capacity") if battery else None
+    percent = battery_percent(battery)
     draw = None
     if battery and ac == 0:
         power = number(battery / "power_now")
