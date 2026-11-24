@@ -26,7 +26,9 @@ done
 
 while (( ! stopping )) && child=$(pgrep -n -u "$UID" -f -- "^$app( |$)"); do
   echo "intent-os: following relaunched Intent (pid $child) after an update"
-  while (( ! stopping )) && kill -0 "$child" 2>/dev/null; do
+  # A relaunched app can live outside the service's cgroup. On stop,
+  # wait for it to release the single-instance lock before systemd starts again.
+  while kill -0 "$child" 2>/dev/null; do
     sleep 2 &
     wait $!
   done
