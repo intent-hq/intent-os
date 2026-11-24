@@ -22,7 +22,7 @@ DOCKER_ARM = docker run --rm --privileged --platform linux/arm64 \
 	-e INTENT_OS_SIGNING_KEY -e HOST_UID="$(shell id -u)" \
 	$(ALARM_IMAGE) bash build/in-container.sh
 
-.PHONY: packages packages-arm64 image smoke lint clean alarm-image image-arm64 image-asahi smoke-arm64
+.PHONY: packages packages-arm64 image smoke lint clean alarm-image image-arm64 image-asahi image-aurora smoke-arm64
 
 packages:
 	$(DOCKER) packages
@@ -46,6 +46,10 @@ image-arm64: alarm-image
 # Apple silicon image for the Asahi installer (after image-arm64 built out/repo).
 image-asahi: alarm-image
 	$(DOCKER_ARM) asahi
+
+# The same Macs on Aurora Silicon's kernel and boot loader (after image-arm64).
+image-aurora: alarm-image
+	$(DOCKER_ARM) aurora
 
 smoke-arm64:
 	tests/smoke.sh "$(ISO_ARM64)" out/smoke

@@ -1,0 +1,19 @@
+# Apple silicon Macs on the Aurora Silicon stack instead of Asahi's: the Aurora
+# kernel, the aura boot loader and U-Boot, Aurora Mesa and speaker protection,
+# from Aurora's signed Arch repository. Installed next to the Asahi variant to
+# test Aurora (newer Macs, deep sleep work); see docs/DESIGN.md §8c.
+# asahi-fwextract (asahi-alarm) loads the firmware the Asahi installer copies.
+pkgname=intent-os-hw-apple-silicon-aurora
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS hardware support for Apple silicon Macs (Aurora Silicon)"
+arch=(aarch64)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(intent-os-base linux-aurora aura uboot-aurora asahi-scripts asahi-fwextract
+  aurora-keyring asahi-alarm-keyring mesa-aurora vulkan-aurora aurora-audio)
+conflicts=(intent-os-hw-apple-silicon)
+
+package() {
+  :
+}

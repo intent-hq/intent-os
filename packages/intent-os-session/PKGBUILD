@@ -20,7 +20,7 @@ depends+=(bluez bluez-utils)
 
 package() {
   cp -a "$startdir/files/." "$pkgdir/"
-  chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/*
+  chmod 0755 "$pkgdir"/usr/bin/* "$pkgdir"/usr/lib/intent-os/* "$pkgdir"/usr/lib/systemd/system-sleep/*
   install -d "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
   ln -s ../keyd.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/keyd.service"
   ln -s ../intent-os-low-power.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/intent-os-low-power.service"

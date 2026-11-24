@@ -233,6 +233,37 @@ stateDiagram-v2
    (`MacBookPro18,4`). Other M1 and M2 models are unverified. M3 and newer are
    outside the current support scope.
 
+## 8c. Apple silicon on Aurora Silicon (experimental)
+
+1. **Why.** Aurora Silicon maintains its own kernel (7.3), boot loader (`aura`, from
+   m1n1), Mesa and audio stack. It supports M3 and newer Macs, and the deep sleep work
+   for M1 Pro and Max builds on it. This variant lets one Mac run both stacks to compare.
+2. **Second image, not a switch.** `make image-aurora` builds
+   `intent-os-<build>-apple-silicon-aurora.zip`, `installer_data-aurora.json` and
+   `install-apple-silicon-aurora.sh`. The Asahi image does not change. The Aurora build
+   step in CI may fail without stopping a release.
+3. **Own ESP volume ID.** fstab and GRUB find the ESP by its volume ID, and the Asahi
+   image's ID is fixed. The Aurora image uses another ID, so both can be on one disk.
+4. **Installer.** Still the Asahi installer (§8b). Aurora's installer app only installs
+   images from catalogs signed with Aurora's key. So stage 1 is Asahi's m1n1, and it
+   starts `aura` as stage 2 from the ESP. Aurora documents this for M1 to M3; it is not
+   yet confirmed on a Mac here. If it fails, Aurora's stage 1 can be installed on this
+   volume from recoveryOS.
+5. **Packages.** `intent-os-hw-apple-silicon-aurora` pulls `linux-aurora`, `aura`,
+   `uboot-aurora`, Aurora's `asahi-scripts` (boot file updater), `mesa-aurora`,
+   `vulkan-aurora` and `aurora-audio` from Aurora's signed Arch repository, and
+   `asahi-fwextract` from `asahi-alarm` for the firmware the Asahi installer copies. The
+   installer names `mesa-aurora` as a target: `intent-os-base` needs `mesa`, and pacman
+   would take Arch's first and stop on the conflict. `aurora-boot` is left out: it
+   brings Aurora's own first-boot and disk-encryption setup.
+6. **Pinned snapshot.** Image and device use one immutable Aurora release
+   (`AURORA_SNAPSHOT` in `build/in-container.sh`), not Aurora's rolling feed, which
+   changes several times a day. Aurora's key is in `keys/aurora.asc`; the build checks
+   its fingerprint.
+7. **Speakers.** Aurora keeps `speakersafetyd` and, at first boot, tries to move the
+   speakers to its newer `speakerguardd`; a Mac that fails its self-check stays on
+   `speakersafetyd`. Check speaker protection before playing sound on a new model.
+
 ## 9. Later
 
 1. Permanent rollback command (today: boot a snapshot from the GRUB menu).

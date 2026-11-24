@@ -25,6 +25,8 @@ BTRFS_OPTS=noatime,compress=zstd:1
 AUTO=0 DISK="" PIN="" TIMEZONE="" AFTER=reboot HW="" REPO=""
 IMAGE=0 FIRSTBOOT=0 BOOTSTRAP=0 ESP_DEV="" ROOT_DEV="" CONSOLE="" ESP_VOLID=""
 APPLE_SILICON=intent-os-hw-apple-silicon
+# The same Macs on the Aurora Silicon kernel and boot loader (docs/DESIGN.md §8c).
+APPLE_SILICON_AURORA=intent-os-hw-apple-silicon-aurora
 ARCH=$(uname -m)
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -271,6 +273,10 @@ hardware_packages() {
   esac
 }
 
+apple_silicon() {
+  [[ $1 == "$APPLE_SILICON" || $1 == "$APPLE_SILICON_AURORA" ]]
+}
+
 keyring_name() {
   [[ $ARCH == aarch64 ]] && echo archlinuxarm || echo archlinux
 }
@@ -297,7 +303,14 @@ prepare_asahi_esp() {
 }
 
 finish_asahi_esp() {
-  arch-chroot "$MNT" update-m1n1
+  if [[ $1 == "$APPLE_SILICON_AURORA" ]]; then
+    # Aurora's updater reads the build host's board from the device tree; an
+    # image must carry every board's tree, in the C locale's order (aura boots
+    # the last tree that matches).
+    arch-chroot "$MNT" env LC_ALL=C AURORA_DEVICE_TREE_COMPATIBLE=/nonexistent update-m1n1
+  else
+    arch-chroot "$MNT" update-m1n1
+  fi
   [[ -s $MNT/efi/m1n1/boot.bin ]] || die "update-m1n1 did not write m1n1/boot.bin"
   rm -f "$MNT/efi/.builder"
   umount "$MNT/boot/efi"
@@ -317,12 +330,15 @@ install_packages() {
   local packages=(intent-os-base intent-os-session intent-os-update)
   # Generic arm64 (UTM, UEFI boards) runs Arch Linux ARM's kernel; Apple
   # silicon gets the Asahi kernel from its hardware package.
-  if [[ $ARCH == aarch64 && $hw != "$APPLE_SILICON" ]]; then
+  if [[ $ARCH == aarch64 ]] && ! apple_silicon "$hw"; then
     packages+=(linux-aarch64 intent-os-bootstrap)
   elif (( FIRSTBOOT )); then
     packages+=(intent-os-bootstrap)  # the first-boot PIN and time zone screen
   fi
-  [[ $hw == "$APPLE_SILICON" ]] && prepare_asahi_esp
+  apple_silicon "$hw" && prepare_asahi_esp
+  # intent-os-base needs "mesa". Name Aurora's build as a target, or pacman takes
+  # Arch's mesa first and then stops on the conflict.
+  [[ $hw == "$APPLE_SILICON_AURORA" ]] && packages+=(mesa-aurora)
   if (( BOOTSTRAP )); then
     packages=(intent-os-bootstrap)
     if [[ $ARCH == aarch64 ]]; then packages+=(linux-aarch64 archlinuxarm-keyring); else packages+=(linux); fi
@@ -342,12 +358,12 @@ install_packages() {
     # Built in a container: keep every driver, not just the build host's.
     # Asahi's hook loads the Wi-Fi and other firmware from the ESP.
     local asahi=""
-    [[ $hw == "$APPLE_SILICON" ]] && asahi=" asahi"
+    apple_silicon "$hw" && asahi=" asahi"
     mkdir -p "$MNT/etc/mkinitcpio.conf.d"
     echo "HOOKS=(base$asahi udev modconf kms keyboard keymap consolefont block filesystems)" \
       > "$MNT/etc/mkinitcpio.conf.d/zz-intent-os-image.conf"
   fi
-  [[ $hw == "$APPLE_SILICON" ]] && finish_asahi_esp
+  apple_silicon "$hw" && finish_asahi_esp "$hw"
   # In a container (image builds) udev has no UUIDs for the loop devices, so
   # genfstab writes /dev/loopN, and it copies the build host's active swap.
   # Name the partitions by UUID read from their superblocks, and drop swap
@@ -364,7 +380,7 @@ install_packages() {
   sed -i 's/compress-force=zstd:15/compress=zstd:1/' "$MNT/etc/fstab"
   if grep -Eq '^/dev/loop' "$MNT/etc/fstab"; then die "fstab still names a loop device."; fi
   # The Asahi installer grows the root partition; grow the filesystem to match.
-  if [[ $hw == "$APPLE_SILICON" ]]; then
+  if apple_silicon "$hw"; then
     sed -i -E '/[[:space:]]\/[[:space:]]+btrfs/ s/(subvol=\/@)/\1,x-systemd.growfs/' "$MNT/etc/fstab"
   fi
 }
@@ -375,12 +391,22 @@ configure_pacman() {
     # The stock ARM config enables aur, but our install repos omit its database.
     sed -i '/^\[aur\]$/,/^$/d' "$conf"
   fi
-  if [[ $(hardware_packages) == "$APPLE_SILICON" ]]; then
+  if apple_silicon "$(hardware_packages)"; then
     # Asahi's kernel, firmware tools and Mesa come before Arch Linux ARM's.
     # shellcheck disable=SC2016 # pacman expands $arch
     echo 'Server = https://github.com/asahi-alarm/asahi-alarm/releases/download/$arch' \
       > "$MNT/etc/pacman.d/mirrorlist.asahi-alarm"
     sed -i '/^\[core\]/i [asahi-alarm]\nInclude = /etc/pacman.d/mirrorlist.asahi-alarm\n' "$conf"
+  fi
+  if [[ $(hardware_packages) == "$APPLE_SILICON_AURORA" ]]; then
+    # Aurora's packages come first of all. The device follows the snapshot this
+    # image was built from (the [aurora] server in the install config), not
+    # Aurora's rolling feed.
+    local aurora_server
+    aurora_server=$(sed -n '/^\[aurora\]$/,/^$/s/^Server = //p' "$INSTALL_CONF")
+    [[ -n $aurora_server ]] || die "the install config has no [aurora] repository"
+    printf 'Server = %s\n' "$aurora_server" > "$MNT/etc/pacman.d/mirrorlist.aurora"
+    sed -i '/^\[asahi-alarm\]/i [aurora]\nSigLevel = Required DatabaseRequired\nInclude = /etc/pacman.d/mirrorlist.aurora\n' "$conf"
   fi
   # x86_64 follows the tested Arch Linux Archive snapshot; Arch Linux ARM has
   # no archive, so aarch64 keeps its normal mirrors.
@@ -459,7 +485,7 @@ configure_system() {
   local hw_units="" units="greetd fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer"
   [[ $(hardware_packages) == intent-os-hw-macbookair6 ]] && hw_units="intent-os-macbookair6-wakeup.service"
   [[ $(hardware_packages) == intent-os-hw-t2 ]] && hw_units="t2fanrd.service tiny-dfr.service"
-  [[ $(hardware_packages) == "$APPLE_SILICON" ]] && hw_units="speakersafetyd.service"
+  apple_silicon "$(hardware_packages)" && hw_units="speakersafetyd.service"
   # Bootstrap images enable the rest on first boot, once it is installed.
   (( BOOTSTRAP )) && units="" hw_units=""
 
@@ -478,6 +504,7 @@ pacman-key --init
 pacman-key --populate "$keyring"
 [[ -f /usr/share/pacman/keyrings/intent-os.gpg ]] && pacman-key --populate intent-os
 [[ -f /usr/share/pacman/keyrings/asahi-alarm.gpg ]] && pacman-key --populate asahi-alarm
+[[ -f /usr/share/pacman/keyrings/aurora.gpg ]] && pacman-key --populate aurora
 mkinitcpio -P
 if [[ -f /boot/Image && ! -f /boot/vmlinuz-linux ]]; then ln -f /boot/Image /boot/vmlinuz-linux; fi
 # Image builds install onto a bare filesystem image, so grub-install would leave

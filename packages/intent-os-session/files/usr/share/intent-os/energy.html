@@ -19,11 +19,16 @@ path.rate { stroke: currentColor; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 0; }
 td:last-child, th:last-child { text-align: right; }
+#sleeps td:not(:first-child), #sleeps th:not(:first-child) { text-align: right; }
 </style>
 <main>
 <h1>Energy</h1>
 <p id="latest" role="status">Loading the last 24 hours…</p>
 <div id="charts"></div>
+<section id="sleeps" hidden>
+<h2>Sleep</h2>
+<table><thead><tr><th>Went to sleep</th><th>Asleep</th><th>Charge</th><th>Energy used</th><th>Average power</th></tr></thead><tbody></tbody></table>
+</section>
 <section>
 <h2>CPU activity</h2>
 <p>CPU time by process name, based on the busiest processes in each sample.</p>
@@ -34,6 +39,25 @@ td:last-child, th:last-child { text-align: right; }
 const charts = document.querySelector('#charts');
 const latest = document.querySelector('#latest');
 const processes = document.querySelector('#processes');
+const sleeps = document.querySelector('#sleeps');
+function duration(seconds) {
+  const hours = Math.floor(seconds / 3600), minutes = Math.round(seconds % 3600 / 60);
+  return hours ? `${hours} h ${minutes} min` : seconds < 60 ? `${seconds} s` : `${minutes} min`;
+}
+function sleepRow(sleep) {
+  const row = document.createElement('tr');
+  const seconds = sleep.end_time - sleep.start_time;
+  // Energy and power only mean sleep drain when no charger was connected at either end.
+  const battery = sleep.start_on_ac === 0 && sleep.end_on_ac === 0 &&
+    Number.isFinite(sleep.start_wh) && Number.isFinite(sleep.end_wh);
+  const used = battery ? sleep.start_wh - sleep.end_wh : null;
+  row.insertCell().textContent = new Date(sleep.start_time * 1000).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
+  row.insertCell().textContent = duration(seconds);
+  row.insertCell().textContent = sleep.start_percent == null || sleep.end_percent == null ? '' : `${sleep.start_percent}% → ${sleep.end_percent}%`;
+  row.insertCell().textContent = battery ? `${used.toFixed(2)} Wh` : 'Charger connected';
+  row.insertCell().textContent = battery && seconds >= 600 ? `${(used * 3600 / seconds).toFixed(2)} W` : '';
+  return row;
+}
 const metrics = [
   ['battery_watts', 'Battery draw', 'W', 1],
   ['cpu_package_watts', 'CPU package power', 'W', 1],
@@ -120,6 +144,9 @@ async function refresh() {
       `${data.samples.length} samples`,
     ].filter(Boolean).join(' · ') : 'Waiting for the first sample.';
     charts.replaceChildren(...metrics.map(metric => chart(data.samples, metric, now)));
+    const slept = await (await fetch('/sleeps')).json();
+    sleeps.hidden = !slept.length;
+    sleeps.querySelector('tbody').replaceChildren(...slept.map(sleepRow));
     processes.replaceChildren(...data.processes.map(process => {
       const row = document.createElement('tr');
       row.insertCell().textContent = process.name;

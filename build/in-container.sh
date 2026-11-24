@@ -2,6 +2,7 @@
 # Runs inside a privileged container with the repo at /src: archlinux:base-devel
 # on x86_64, an Arch Linux ARM image on aarch64 (see the Makefile).
 #   packages: build Intent OS pacman packages into out/repo
+#   asahi, aurora: build an Apple silicon image (Asahi or Aurora) into out/asahi
 #   iso:      build the installer ISO (netinstall) into out/iso
 #   all:      both
 # Env: ARCHIVE_DATE (YYYY/MM/DD), BUILD_ID, INTENT_OS_SIGNING_KEY (optional,
@@ -18,7 +19,7 @@ PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update inte
 if [[ $ARCH == x86_64 ]]; then
   PACKAGES+=(facetimehd-dkms intent-os-hw-macbookair6 intent-os-hw-t2)
 else
-  PACKAGES+=(intent-os-hw-apple-silicon)
+  PACKAGES+=(intent-os-hw-apple-silicon intent-os-hw-apple-silicon-aurora)
 fi
 # Apple silicon (Asahi Linux): packages from asahi-alarm; the image is a zip
 # for the Asahi installer, which runs from macOS.
@@ -27,6 +28,15 @@ ASAHI_SERVER='https://github.com/asahi-alarm/asahi-alarm/releases/download/$arch
 ASAHI_ESP_VOLID=2abf9f91
 ASAHI_ESP_BYTES=524288000
 ASAHI_ROOT_MIB=6144
+# The same Macs on Aurora Silicon's kernel and boot loader: a second image,
+# installed next to the Asahi one. Packages come from one immutable Aurora
+# snapshot (image and device); move it only after a test on a Mac.
+AURORA_SNAPSHOT=testing-20261121.4
+AURORA_SERVER=https://github.com/aurora-silicon/alarm-aurora/releases/download/$AURORA_SNAPSHOT
+AURORA_KEY_FPR=A33623FB30665BEFAA0FFB6DE35EC749219B20F7
+# Its own ESP volume ID: both images can be on one disk, and fstab and GRUB
+# find the ESP by this ID.
+AURORA_ESP_VOLID=7c1e4a0b
 # macOS system firmware versions the Asahi installer can set up (from asahi-alarm).
 ASAHI_SUPPORTED_FW='["12.3", "12.3.1", "13.5", "14.8.3"]'
 # T2 Macs (2018-2020): t2linux packages, copied into the signed intent-os repo
@@ -383,9 +393,23 @@ trust_asahi_alarm() {
   pacman-key --populate asahi-alarm >/dev/null
 }
 
+trust_aurora() {
+  pacman-key --add "$SRC/keys/aurora.asc" >/dev/null
+  pacman-key --finger "$AURORA_KEY_FPR" >/dev/null 2>&1 ||
+    { echo "error: keys/aurora.asc is not Aurora's package key" >&2; exit 1; }
+  pacman-key --lsign-key "$AURORA_KEY_FPR" >/dev/null
+}
+
+# $1: asahi or aurora
 build_asahi_image() {
   [[ $ARCH == aarch64 ]] || { echo "error: the Apple silicon image builds on aarch64" >&2; exit 1; }
-  log "Building the Apple silicon (Asahi) image"
+  local variant=$1 hw=intent-os-hw-apple-silicon suffix="" os_name="Intent OS" volid=$ASAHI_ESP_VOLID aurora_repo=""
+  if [[ $variant == aurora ]]; then
+    hw=intent-os-hw-apple-silicon-aurora suffix=-aurora os_name="Intent OS (Aurora)" volid=$AURORA_ESP_VOLID
+    aurora_repo=$'[aurora]\nSigLevel = Required DatabaseRequired\nServer = '"$AURORA_SERVER"$'\n'
+    trust_aurora
+  fi
+  log "Building the Apple silicon ($variant) image"
   trust_asahi_alarm
   # The installer reads its package config and the Intent OS key from /etc/intent-os.
   local etc=/etc/intent-os intent_siglevel="Optional TrustAll"
@@ -404,6 +428,7 @@ ParallelDownloads = 5
 SigLevel = $intent_siglevel
 Server = https://github.com/intent-hq/intent-os/releases/download/repo-\$arch
 
+$aurora_repo
 [asahi-alarm]
 Server = $ASAHI_SERVER
 
@@ -417,14 +442,14 @@ Include = /etc/pacman.d/mirrorlist
 Include = /etc/pacman.d/mirrorlist
 CONF
 
-  local dir=$WORK/asahi esp_dev root_dev name="intent-os-$BUILD_ID-apple-silicon"
+  local dir=$WORK/$variant esp_dev root_dev name="intent-os-$BUILD_ID-apple-silicon$suffix"
   rm -rf "$dir" && mkdir -p "$dir/pkg/esp" "$OUT/asahi"
   truncate -s "$ASAHI_ESP_BYTES" "$dir/esp.img"
   truncate -s "${ASAHI_ROOT_MIB}M" "$dir/pkg/root.img"
   esp_dev=$(losetup -f --show "$dir/esp.img")
   root_dev=$(losetup -f --show "$dir/pkg/root.img")
   printf '%s\n' "ESP_DEV=$esp_dev" "ROOT_DEV=$root_dev" IMAGE=1 FIRSTBOOT=1 TIMEZONE=UTC \
-    HW=intent-os-hw-apple-silicon "REPO=file://$OUT/repo" "ESP_VOLID=$ASAHI_ESP_VOLID" > "$dir/install.conf"
+    "HW=$hw" "REPO=file://$OUT/repo" "ESP_VOLID=$volid" > "$dir/install.conf"
   INTENT_OS_INSTALL_CONFIG=$dir/install.conf bash "$SRC/iso/airootfs/usr/local/bin/intent-os-install"
   mkdir -p "$dir/mnt"
   mount "$esp_dev" "$dir/mnt"
@@ -436,12 +461,12 @@ CONF
   rm -f "$OUT/asahi/$name.zip"
   (cd "$dir/pkg" && zip -1 -q -r "$OUT/asahi/$name.zip" esp root.img)
 
-  cat > "$OUT/asahi/installer_data.json" <<JSON
+  cat > "$OUT/asahi/installer_data$suffix.json" <<JSON
 {
   "os_list": [
     {
-      "name": "Intent OS",
-      "default_os_name": "Intent OS",
+      "name": "$os_name",
+      "default_os_name": "$os_name",
       "boot_object": "m1n1.bin",
       "next_object": "m1n1/boot.bin",
       "package": "https://github.com/intent-hq/intent-os/releases/download/iso-$BUILD_ID/$name.zip",
@@ -453,7 +478,7 @@ CONF
           "type": "EFI",
           "size": "${ASAHI_ESP_BYTES}B",
           "format": "fat",
-          "volume_id": "0x$ASAHI_ESP_VOLID",
+          "volume_id": "0x$volid",
           "copy_firmware": true,
           "copy_installer_data": true,
           "source": "esp"
@@ -470,18 +495,24 @@ CONF
   ]
 }
 JSON
-  cp "$SRC/asahi/install.sh" "$OUT/asahi/install-apple-silicon.sh"
-  (cd "$OUT/asahi" && sha256sum "$name.zip" > SHA256SUMS.apple-silicon)
-  log "Apple silicon image: $(du -h "$OUT/asahi/$name.zip" | cut -f1)"
+  # One script per image: it differs only in the image list it downloads.
+  sed -e "s|/installer_data\\.json|/installer_data$suffix.json|" \
+    -e "s|Choose \\\\\"Intent OS\\\\\"|Choose \\\\\"$os_name\\\\\"|" \
+    "$SRC/asahi/install.sh" > "$OUT/asahi/install-apple-silicon$suffix.sh"
+  grep -q "installer_data$suffix.json" "$OUT/asahi/install-apple-silicon$suffix.sh" &&
+    grep -qF "Choose \\\"$os_name\\\"" "$OUT/asahi/install-apple-silicon$suffix.sh" ||
+    { echo "error: could not write install-apple-silicon$suffix.sh" >&2; exit 1; }
+  (cd "$OUT/asahi" && sha256sum "$name.zip" > "SHA256SUMS.apple-silicon$suffix")
+  log "Apple silicon ($variant) image: $(du -h "$OUT/asahi/$name.zip" | cut -f1)"
 }
 
 prepare
 case ${1:-all} in
   packages) build_packages ;;
   iso) build_iso ;;
-  asahi) build_asahi_image ;;
+  asahi|aurora) build_asahi_image "$1" ;;
   all) build_packages; build_iso ;;
-  *) echo "usage: $0 packages|iso|asahi|all" >&2; exit 2 ;;
+  *) echo "usage: $0 packages|iso|asahi|aurora|all" >&2; exit 2 ;;
 esac
 [[ -n ${HOST_UID:-} ]] && chown -R "$HOST_UID" "$OUT"
 log "Done: $OUT"

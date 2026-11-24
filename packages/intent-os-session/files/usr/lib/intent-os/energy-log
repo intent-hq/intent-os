@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import sys
 from threading import Thread
 import time
 
@@ -31,6 +32,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 ).fetchall()
             connection.close()
             body = json.dumps(samples).encode()
+            content_type = "application/json"
+        elif self.path == "/sleeps":
+            with sqlite3.connect(f"file:{DATABASE}?mode=ro", uri=True) as connection:
+                connection.row_factory = sqlite3.Row
+                sleeps = connection.execute(
+                    "SELECT * FROM sleeps WHERE end_time IS NOT NULL ORDER BY id DESC LIMIT 10"
+                ).fetchall()
+            connection.close()
+            body = json.dumps(list(map(dict, sleeps))).encode()
             content_type = "application/json"
         elif self.path == "/samples":
             since = int(time.time()) - 86400
@@ -94,8 +104,43 @@ def processes():
     return result
 
 
+def battery_state():
+    supplies = sorted((SYS / "power_supply").glob("*"))
+    battery = next((path for path in supplies if supply_type(path) == "Battery"), None)
+    online = [value for path in supplies if supply_type(path) != "Battery"
+              and (value := number(path / "online")) is not None]
+    wh = None
+    if battery:
+        energy = number(battery / "energy_now")
+        charge = number(battery / "charge_now")
+        volts = number(battery / "voltage_min_design") or number(battery / "voltage_now")
+        if energy is not None:
+            wh = energy / 1e6
+        elif charge is not None and volts is not None:
+            wh = charge * volts / 1e12
+    return (int(time.time()), wh, number(battery / "capacity") if battery else None,
+            int(any(online)) if online else None)
+
+
+# systemd-sleep runs this with "pre" right before suspend and "post" right after
+# resume, so each sleep has exact readings (the 60 s samples are too coarse).
+def record_sleep(phase):
+    with db:
+        if phase == "pre":
+            db.execute("INSERT INTO sleeps (start_time, start_wh, start_percent, start_on_ac) "
+                       "VALUES (?, ?, ?, ?)", battery_state())
+        elif phase == "post":
+            db.execute("UPDATE sleeps SET end_time = ?, end_wh = ?, end_percent = ?, end_on_ac = ? "
+                       "WHERE id = (SELECT MAX(id) FROM sleeps) AND end_time IS NULL", battery_state())
+
+
 db = sqlite3.connect(DATABASE)
 db.executescript("""
+CREATE TABLE IF NOT EXISTS sleeps (
+    id INTEGER PRIMARY KEY, start_time INTEGER NOT NULL, start_wh REAL,
+    start_percent INTEGER, start_on_ac INTEGER, end_time INTEGER, end_wh REAL,
+    end_percent INTEGER, end_on_ac INTEGER
+);
 CREATE TABLE IF NOT EXISTS samples (
     id INTEGER PRIMARY KEY, unix_time INTEGER NOT NULL, interval_seconds REAL,
     on_ac INTEGER, battery_percent INTEGER, battery_watts REAL,
@@ -107,6 +152,9 @@ CREATE TABLE IF NOT EXISTS process_cpu (
     PRIMARY KEY(sample_id, name)
 );
 """)
+if len(sys.argv) > 1:
+    record_sleep(sys.argv[1])
+    sys.exit()
 try:
     dashboard = ThreadingHTTPServer(("127.0.0.1", 40339), DashboardHandler)
 except OSError as error:

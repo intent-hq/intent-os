@@ -67,6 +67,19 @@ Give Intent OS at least 20 GB and choose **Intent OS**. Follow the installer's r
 steps. On first start, set the PIN and time zone; then join Wi-Fi from the top bar.
 M3 and newer chips are not supported yet.
 
+### Experimental: Intent OS on Aurora Silicon
+
+A second image runs the same Macs on [Aurora Silicon](https://aurorasilicon.org)'s kernel
+and boot loader instead of Asahi's. It is untested. It installs as its own system, so it
+can sit next to macOS and the Asahi-based Intent OS; hold the power button at startup to
+choose one. Back up macOS first: the installer makes room by shrinking it.
+
+```sh
+curl -fsSL https://github.com/intent-hq/intent-os/releases/latest/download/install-apple-silicon-aurora.sh | sh
+```
+
+Choose **Intent OS (Aurora)**.
+
 ## Run in a VM on an Apple silicon Mac (UTM)
 
 Each release has two netinstall ISOs: `*-x86_64.iso` and `*-aarch64.iso`. On an Apple
@@ -103,6 +116,7 @@ Open `http://127.0.0.1:40339` on the device to see the last 24 hours.
 | `packages/intent-os-hw-macbookair6` | MacBook Air 6,x: Broadcom Wi-Fi, wake fix, video decode, FaceTime HD camera |
 | `packages/facetimehd-dkms` | FaceTime HD camera driver (from the AUR package) |
 | `packages/intent-os-hw-apple-silicon` | Apple silicon (M1, M2) on Asahi Linux: kernel, m1n1/U-Boot, GPU, speakers |
+| `packages/intent-os-hw-apple-silicon-aurora` | The same Macs on Aurora Silicon (experimental): Aurora kernel, aura/U-Boot, GPU, speakers |
 | `asahi/install.sh` | macOS script that runs the Asahi installer with the Intent OS image |
 | `packages/intent-os-hw-t2` | Intel Macs with the T2 chip (2018–2020): t2linux kernel, Wi-Fi firmware, audio, fans, Touch Bar |
 | `iso/` | Additions to the archiso `releng` profile, including the installer |

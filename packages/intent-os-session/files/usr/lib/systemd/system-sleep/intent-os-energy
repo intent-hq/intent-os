@@ -1,0 +1,3 @@
+#!/bin/sh
+# Record the battery right before suspend ("pre") and right after resume ("post").
+exec /usr/lib/intent-os/energy-log "$1"

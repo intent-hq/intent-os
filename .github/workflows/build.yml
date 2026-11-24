@@ -151,6 +151,14 @@ jobs:
         env:
           INTENT_OS_SIGNING_KEY: ${{ secrets.INTENT_OS_SIGNING_KEY }}
         run: make image-asahi ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
+      # Experimental, and it depends on Aurora's package host: a failure here
+      # does not stop a release.
+      - name: Build the Apple silicon (Aurora) image
+        if: needs.ids.outputs.installer_tag == ''
+        continue-on-error: true
+        env:
+          INTENT_OS_SIGNING_KEY: ${{ secrets.INTENT_OS_SIGNING_KEY }}
+        run: make image-aurora ARCHIVE_DATE='${{ needs.ids.outputs.archive_date }}' BUILD_ID='${{ needs.ids.outputs.build_id }}'
       - uses: actions/upload-artifact@v4
         with:
           name: image-arm64
@@ -219,9 +227,9 @@ jobs:
       - name: Publish ISOs
         if: needs.ids.outputs.installer_tag == ''
         run: |
-          cat out/iso/SHA256SUMS out-arm64/iso/SHA256SUMS out-arm64/asahi/SHA256SUMS.apple-silicon > SHA256SUMS
+          cat out/iso/SHA256SUMS out-arm64/iso/SHA256SUMS out-arm64/asahi/SHA256SUMS.apple-silicon* > SHA256SUMS
           gh release create "iso-$BUILD_ID" out/iso/*.iso out-arm64/iso/*.iso SHA256SUMS \
-            out-arm64/asahi/*.zip out-arm64/asahi/installer_data.json out-arm64/asahi/install-apple-silicon.sh \
+            out-arm64/asahi/*.zip out-arm64/asahi/installer_data*.json out-arm64/asahi/install-apple-silicon*.sh \
             --title "Intent OS $BUILD_ID" \
             --notes "Netinstall ISOs for x86_64 and aarch64 (UEFI PCs, Intel Macs including T2, and VMs such as UTM on Apple silicon). Apple silicon Macs (M1, M2, untested): run install-apple-silicon.sh from macOS. Arch snapshot $ARCHIVE_DATE (x86_64). $(grep INTENT_VERSION out/channel.env)"
       - name: Publish package repos
