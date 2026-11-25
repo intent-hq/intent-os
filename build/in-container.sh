@@ -37,6 +37,31 @@ T2_PACKAGES=(linux-t2 linux-t2-headers apple-bcm-firmware-fetcher apple-t2-audio
 
 : "${ARCHIVE_DATE:?set ARCHIVE_DATE, for example 2026/11/15}"
 : "${BUILD_ID:?set BUILD_ID}"
+
+# The tested Arch snapshot first. archive.archlinux.org has no mirror and
+# stalls now and then; pacman then falls back to the current Arch mirrors.
+write_mirrorlist() {
+  # shellcheck disable=SC2016 # pacman expands $repo and $arch
+  printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$ARCHIVE_DATE" > "$1"
+  cat >> "$1" <<'MIRRORS'
+Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
+MIRRORS
+}
+
+# Avoid mirror.archlinuxarm.org: per-request Geo-IP redirects can mix a
+# fresh package database with a stale backend mirror (404). Direct mirrors
+# keep database and package downloads on the same server, with failover.
+write_alarm_mirrorlist() {
+  cat > "$1" <<'MIRRORS'
+Server = http://fl.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://ca.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://nj.us.mirror.archlinuxarm.org/$arch/$repo
+Server = http://de.mirror.archlinuxarm.org/$arch/$repo
+Server = http://de4.mirror.archlinuxarm.org/$arch/$repo
+Server = http://dk.mirror.archlinuxarm.org/$arch/$repo
+MIRRORS
+}
 [[ $ARCHIVE_DATE =~ ^[0-9]{4}/[0-9]{2}/[0-9]{2}$ ]] || { echo "bad ARCHIVE_DATE" >&2; exit 1; }
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -46,17 +71,7 @@ prepare() {
   pacman-key --init >/dev/null
   if [[ $ARCH == aarch64 ]]; then
     pacman-key --populate archlinuxarm >/dev/null
-    # Avoid mirror.archlinuxarm.org: per-request Geo-IP redirects can mix a
-    # fresh package database with a stale backend mirror (404). Direct mirrors
-    # keep database and package downloads on the same server, with failover.
-    cat > /etc/pacman.d/mirrorlist <<'MIRRORS'
-Server = http://fl.us.mirror.archlinuxarm.org/$arch/$repo
-Server = http://ca.us.mirror.archlinuxarm.org/$arch/$repo
-Server = http://nj.us.mirror.archlinuxarm.org/$arch/$repo
-Server = http://de.mirror.archlinuxarm.org/$arch/$repo
-Server = http://de4.mirror.archlinuxarm.org/$arch/$repo
-Server = http://dk.mirror.archlinuxarm.org/$arch/$repo
-MIRRORS
+    write_alarm_mirrorlist /etc/pacman.d/mirrorlist
     # The imported rootfs keeps CheckSpace, which fails on overlay mounts.
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
     pacman -Syu --noconfirm --needed base-devel git arch-install-scripts btrfs-progs \
@@ -138,10 +153,6 @@ build_packages() {
     "$ARCHIVE_DATE" "$BUILD_ID" "$intent_version" > "$OUT/channel.env"
 }
 
-write_mirrorlist() {
-  # shellcheck disable=SC2016 # pacman expands $repo and $arch
-  printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$ARCHIVE_DATE" > "$1"
-}
 
 # intent-os-live: the MacBook Air wl driver built once for the live kernel,
 # plus Intel iwlwifi firmware only, so the USB stick needs no compiler,
@@ -338,14 +349,15 @@ fi\
   local etc=$profile/airootfs/etc/intent-os
   mkdir -p "$etc"
   # The installer downloads from the signed intent-os repo plus, on x86_64,
-  # the pinned Arch snapshot (Arch Linux ARM has no archive: normal mirrors).
+  # the pinned Arch snapshot (Arch Linux ARM has no archive: direct mirrors).
   local intent_siglevel="Optional TrustAll" distro_repos
   if [[ -d $OUT/keyring ]]; then
     cp "$OUT/keyring/intent-os.gpg" "$OUT/keyring/intent-os-trusted" "$etc/"
     intent_siglevel="Required DatabaseRequired"
   fi
   if [[ $ARCH == aarch64 ]]; then
-    distro_repos=$'[core]\nInclude = /etc/pacman.d/mirrorlist\n\n[extra]\nInclude = /etc/pacman.d/mirrorlist\n\n[alarm]\nInclude = /etc/pacman.d/mirrorlist'
+    write_alarm_mirrorlist "$etc/mirrorlist"
+    distro_repos=$'[core]\nInclude = /etc/intent-os/mirrorlist\n\n[extra]\nInclude = /etc/intent-os/mirrorlist\n\n[alarm]\nInclude = /etc/intent-os/mirrorlist'
   else
     write_mirrorlist "$etc/mirrorlist"
     distro_repos=$'[core]\nInclude = /etc/intent-os/mirrorlist\n\n[extra]\nInclude = /etc/intent-os/mirrorlist'
