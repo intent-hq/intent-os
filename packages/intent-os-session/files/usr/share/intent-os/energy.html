@@ -15,6 +15,14 @@ svg text { fill: currentColor; font-size: 12px; }
 .trace { fill: none; stroke: light-dark(#717453,#ddec61); stroke-width: 2; }
 .rate { color: light-dark(#175ca8,#80baff); }
 path.rate { stroke: currentColor; }
+.chart { position: relative; }
+.chart-tooltip {
+  position: absolute; z-index: 1; pointer-events: none;
+  max-width: 100%; box-sizing: border-box; padding: 6px 10px; border-radius: 6px;
+  background: light-dark(#272727,#f0f0eb); color: light-dark(#fff,#161616);
+  font-size: 12px; white-space: pre-line;
+}
+.chart-guide { stroke: currentColor; opacity: .45; pointer-events: none; }
 .grid { stroke: currentColor; opacity: .15; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 0; }
@@ -111,13 +119,22 @@ function chart(samples, [key, label, unit, floor], end) {
 
   plot(samples.map(sample => ({unix_time: sample.unix_time, value: sample[key]})),
     value => 112 - 100 * value / top, '');
+  let rates;
   if (charge) {
-    const rates = samples.map(({unix_time, battery_percent}, index) => {
+    let start = 0;
+    rates = samples.map((sample, index) => {
+      const {unix_time, on_ac, battery_percent} = sample;
       const previous = samples[index - 1];
-      const seconds = unix_time - previous?.unix_time;
-      const value = seconds > 0 && seconds < 120 &&
-        Number.isFinite(battery_percent) && Number.isFinite(previous.battery_percent)
-        ? (battery_percent - previous.battery_percent) * 60 / seconds : null;
+      if (!previous || unix_time - previous.unix_time >= 120 ||
+          previous.on_ac !== on_ac || !Number.isFinite(previous.battery_percent) ||
+          !Number.isFinite(battery_percent)) {
+        start = index;
+      }
+      while (unix_time - samples[start].unix_time > 300) start++;
+      const first = samples[start];
+      const seconds = unix_time - first.unix_time;
+      const value = seconds >= 180 && Number.isFinite(battery_percent)
+        ? (battery_percent - first.battery_percent) * 60 / seconds : null;
       return {unix_time, value};
     });
     const limit = Math.max(0.5, ...rates.map(({value}) => Math.ceil(Math.abs(value) * 2) / 2));
@@ -127,7 +144,57 @@ function chart(samples, [key, label, unit, floor], end) {
       element('text', {x: right + 8, y: 116, class: 'rate'}, `−${limit} pp/min`));
     plot(rates, value => 62 - 50 * value / limit, 'rate');
   }
-  card.append(svg);
+  const plotArea = document.createElement('div');
+  plotArea.className = 'chart';
+  const tooltip = document.createElement('div');
+  tooltip.className = 'chart-tooltip';
+  tooltip.hidden = true;
+  const guide = element('line', {y1: 12, y2: 112, class: 'chart-guide', visibility: 'hidden'});
+  svg.append(guide);
+  plotArea.append(svg, tooltip);
+  card.append(plotArea);
+  function hideReading() {
+    tooltip.hidden = true;
+    guide.setAttribute('visibility', 'hidden');
+  }
+  svg.addEventListener('pointerleave', hideReading);
+  svg.addEventListener('pointermove', event => {
+    const point = new DOMPoint(event.clientX, event.clientY)
+      .matrixTransform(svg.getScreenCTM().inverse());
+    if (point.x < 52 || point.x > right || point.y < 12 || point.y > 112) {
+      hideReading();
+      return;
+    }
+    const time = end - 86400 + 86400 * (point.x - 52) / (right - 52);
+    let nearest = -1;
+    let distance = 90;
+    samples.forEach((sample, index) => {
+      const delta = Math.abs(sample.unix_time - time);
+      if (delta <= distance && Number.isFinite(sample[key]) && sample.unix_time >= end - 86400) {
+        nearest = index;
+        distance = delta;
+      }
+    });
+    if (nearest === -1) {
+      hideReading();
+      return;
+    }
+    const sample = samples[nearest];
+    const rate = rates?.[nearest]?.value;
+    const x = 52 + (right - 52) * (sample.unix_time - end + 86400) / 86400;
+    guide.setAttribute('x1', x);
+    guide.setAttribute('x2', x);
+    guide.setAttribute('visibility', 'visible');
+    tooltip.textContent = [
+      new Date(sample.unix_time * 1000).toLocaleString(),
+      `${label} · ${sample[key].toFixed(1)} ${unit}`,
+      Number.isFinite(rate) ? `Rate · ${rate.toFixed(2)} pp/min` : null,
+    ].filter(Boolean).join('\n');
+    const bounds = plotArea.getBoundingClientRect();
+    tooltip.hidden = false;
+    tooltip.style.left = `${Math.max(0, Math.min(event.clientX - bounds.left + 12, bounds.width - tooltip.offsetWidth))}px`;
+    tooltip.style.top = `${Math.max(0, event.clientY - bounds.top - tooltip.offsetHeight - 8)}px`;
+  });
   return card;
 }
 async function refresh() {
@@ -140,7 +207,7 @@ async function refresh() {
     latest.textContent = last ? [
       'Last 24 hours', new Date(last.unix_time * 1000).toLocaleTimeString(),
       last.on_ac === 1 ? 'Plugged in' : last.on_ac === 0 ? 'On battery' : 'Power source unknown',
-      last.battery_percent == null ? null : `${last.battery_percent}% charge`,
+      last.battery_percent == null ? null : `${last.battery_percent.toFixed(1)}% charge`,
       `${data.samples.length} samples`,
     ].filter(Boolean).join(' · ') : 'Waiting for the first sample.';
     charts.replaceChildren(...metrics.map(metric => chart(data.samples, metric, now)));

@@ -46,6 +46,12 @@ bindsym Shift+Print exec intent-os-screenshot region
 workspace_auto_back_and_forth no
 bindsym Mod4+Left workspace prev_on_output
 bindsym Mod4+Right workspace next_on_output
+# The Intent dock (cloudlands-fe DOCK_WINDOW_TITLE) floats at absolute 0,0: the
+# top-left of the main screen (the output at the layout origin), on the workspace
+# that screen shows, whichever screen had focus when it opened. It never gets a
+# workspace of its own. Intent places its contents for that screen and grows it
+# down and to the right, so it stays on screen.
+for_window [app_id="(?i)intent" title="^Intent Dock$"] floating enable, move absolute position 0 0
 
 
 exec /usr/lib/intent-os/session-start

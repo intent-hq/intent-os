@@ -320,6 +320,10 @@ class TopBar(Gtk.Window):
         brand_button.get_style_context().add_class("button")
         brand_button.connect("button-press-event", lambda *_: self.open_versions())
         self.bar.pack_start(brand_button, False, False, 0)
+        self.restart_status = Gtk.Label()
+        self.restart_status.set_no_show_all(True)
+        self.restart_status.get_style_context().add_class("item")
+        self.bar.pack_start(self.restart_status, False, False, 0)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.network = self.item(self.open_wifi)
         self.awake = self.item(None)
@@ -355,8 +359,7 @@ class TopBar(Gtk.Window):
         self.bar.connect("button-press-event", lambda *_: self.dismiss_power())
         self.power_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin=4)
         self.power_menu.add(self.power_box)
-        self.power_item(I_RESTART_INTENT, "Restart Intent", lambda: run(
-            "systemctl", "--user", "restart", "intent.service"))
+        self.restart_button = self.power_item(I_RESTART_INTENT, "Restart Intent", self.restart_intent)
         self.power_item(I_LOCK, "Lock", lambda: run("/usr/bin/intent-os-lock"))
         self.power_item(I_SLEEP, "Sleep", lambda: run("systemctl", "suspend"))
         self.low_power = self.power_item(I_LOW_POWER, "Low Power Mode", lambda: run(
@@ -530,6 +533,36 @@ class TopBar(Gtk.Window):
         if yes and command:
             run(*command)
 
+    def restart_intent(self):
+        self.restart_button.set_sensitive(False)
+        self.restart_status.set_text("Restarting Intent…")
+        self.restart_status.show()
+        try:
+            process = subprocess.Popen(["systemctl", "--user", "restart", "intent.service"])
+        except OSError:
+            self.restart_failed()
+            return
+        GLib.timeout_add(200, self.check_restart, process)
+
+    def check_restart(self, process):
+        result = process.poll()
+        if result is None:
+            return True
+        if result == 0:
+            self.clear_restart_status()
+        else:
+            self.restart_failed()
+        return False
+
+    def restart_failed(self):
+        self.restart_status.set_text("Intent restart failed")
+        GLib.timeout_add_seconds(4, self.clear_restart_status)
+
+    def clear_restart_status(self):
+        self.restart_status.hide()
+        self.restart_button.set_sensitive(True)
+        return False
+
     def confirm_undo(self):
         when = last_update_date()
         if when:
@@ -625,7 +658,7 @@ class TopBar(Gtk.Window):
             self.close_timer = 0
 
     def close(self):
-        if holding() or self.asking or self.active_menu is not None:
+        if holding() or self.asking or self.active_menu is not None or self.restart_status.get_visible():
             return True  # check again once the menu or question closes
         self.close_timer = 0
         if self.get_child() is not self.strip:
