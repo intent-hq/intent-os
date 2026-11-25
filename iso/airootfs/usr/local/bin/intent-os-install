@@ -19,6 +19,8 @@ OWNER=intent
 HOSTNAME_DEFAULT=intent-os
 FWCFG=/sys/firmware/qemu_fw_cfg/by_name/opt/intent-os/install/raw
 INSTALL_CONF=/etc/intent-os/pacman-install.conf
+RAM_CACHE=/var/cache/intent-os-install
+DOWNLOAD_TRIES=10
 MNT=/mnt
 BTRFS_OPTS=noatime,compress=zstd:1
 
@@ -303,15 +305,33 @@ finish_asahi_esp() {
   umount "$MNT/boot/efi"
 }
 
+# Keep downloads in RAM (8 GB Macs and up) so they outlast a failed run and a
+# rerun of the installer, which erases the disk. The full set is about 1.3 GB.
+ram_cache() {
+  (( IMAGE )) && return 1
+  local mem_kb
+  mem_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+  (( mem_kb >= 7 * 1024 * 1024 )) || return 1
+  mountpoint -q "$RAM_CACHE" && return 0
+  mkdir -p "$RAM_CACHE" && mount -t tmpfs -o size=3G,mode=0755 tmpfs "$RAM_CACHE"
+}
+
 install_packages() {
   say "Downloading and installing Intent OS"
-  local hw conf=$INSTALL_CONF
+  local hw conf
   hw=$(hardware_packages)
   [[ -n $hw ]] && echo "Hardware support: $hw"
+  conf=$(mktemp)
+  cp "$INSTALL_CONF" "$conf"
   if [[ -n $REPO ]]; then
-    conf=$(mktemp)
-    sed "s|^Server = https://github.com/intent-hq/intent-os/.*|Server = $REPO|" "$INSTALL_CONF" > "$conf"
+    sed -i "s|^Server = https://github.com/intent-hq/intent-os/.*|Server = $REPO|" "$conf"
     [[ $REPO == file://* ]] && sed -i 's|^SigLevel = Required DatabaseRequired$|SigLevel = Optional TrustAll|' "$conf"
+  fi
+  # pacstrap -c reads CacheDir from the config instead of the new root's cache.
+  local cache_flag=""
+  if ram_cache; then
+    sed -i "/^\[options\]/a CacheDir = $RAM_CACHE" "$conf"
+    cache_flag=-c
   fi
   trust_intent_os_key
   local packages=(intent-os-base intent-os-session intent-os-update)
@@ -328,15 +348,15 @@ install_packages() {
     if [[ $ARCH == aarch64 ]]; then packages+=(linux-aarch64 archlinuxarm-keyring); else packages+=(linux); fi
     hw=""
   fi
-  # Mirrors stall now and then. Downloads stay in the new root's package
+  # Mirrors stall now and then. Finished downloads stay in the package
   # cache, so each retry fetches only what is still missing.
   local try
-  for try in 1 2 3; do
+  for ((try = 1; try <= DOWNLOAD_TRIES; try++)); do
     # shellcheck disable=SC2086
-    pacstrap -C "$conf" -G -M "$MNT" "${packages[@]}" $hw && break
-    (( try == 3 )) && die "Could not download Intent OS. Check the network, then run the installer again."
-    echo "Download failed. Trying again in 30 seconds ($try of 3)."
-    sleep 30
+    pacstrap -C "$conf" $cache_flag -G -M "$MNT" "${packages[@]}" $hw && break
+    (( try == DOWNLOAD_TRIES )) && die "Could not download Intent OS. Check the network, then run the installer again."
+    echo "Download failed. Trying again in 15 seconds ($try of $DOWNLOAD_TRIES)."
+    sleep 15
   done
   if (( IMAGE )); then
     # Built in a container: keep every driver, not just the build host's.
