@@ -499,9 +499,11 @@ JSON
   sed -e "s|/installer_data\\.json|/installer_data$suffix.json|" \
     -e "s|Choose \\\\\"Intent OS\\\\\"|Choose \\\\\"$os_name\\\\\"|" \
     "$SRC/asahi/install.sh" > "$OUT/asahi/install-apple-silicon$suffix.sh"
-  grep -q "installer_data$suffix.json" "$OUT/asahi/install-apple-silicon$suffix.sh" &&
-    grep -qF "Choose \\\"$os_name\\\"" "$OUT/asahi/install-apple-silicon$suffix.sh" ||
-    { echo "error: could not write install-apple-silicon$suffix.sh" >&2; exit 1; }
+  if ! { grep -q "installer_data$suffix.json" "$OUT/asahi/install-apple-silicon$suffix.sh" &&
+    grep -qF "Choose \\\"$os_name\\\"" "$OUT/asahi/install-apple-silicon$suffix.sh"; }; then
+    echo "error: could not write install-apple-silicon$suffix.sh" >&2
+    exit 1
+  fi
   (cd "$OUT/asahi" && sha256sum "$name.zip" > "SHA256SUMS.apple-silicon$suffix")
   log "Apple silicon ($variant) image: $(du -h "$OUT/asahi/$name.zip" | cut -f1)"
 }
