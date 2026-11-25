@@ -1,5 +1,5 @@
 #!/bin/sh
-# MacBook Air 6,x wakes right after suspend when the xHCI controller (XHC1)
+# MacBook Airs (6,x and later) wake right after suspend when the xHCI controller (XHC1)
 # or the Wi-Fi card (ARPT) may wake the system. Lid and power key still wake.
 # Writing a name to /proc/acpi/wakeup toggles it, so disable only if enabled.
 for dev in XHC1 ARPT; do

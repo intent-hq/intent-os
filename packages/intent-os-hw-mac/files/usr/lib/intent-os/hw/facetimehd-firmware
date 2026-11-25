@@ -6,6 +6,8 @@
 set -euo pipefail
 dest=/usr/lib/firmware/facetimehd/firmware.bin
 [[ -s $dest ]] && exit 0
+# Only Macs with the PCIe FaceTime HD camera (Broadcom 14e4:1570) need it.
+grep -qix '0x1570' /sys/bus/pci/devices/*/device 2>/dev/null || exit 0
 url=https://updates.cdn-apple.com/2019/cert/041-88431-20191011-e7ee7d98-2878-4cd9-bc0a-d98b3a1e24b1/OSXUpd10.11.5.dmg
 range=204909802-207733123
 file=System/Library/Extensions/AppleCameraInterface.kext/Contents/MacOS/AppleCameraInterface

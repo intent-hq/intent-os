@@ -16,7 +16,7 @@ ARCH=$(uname -m)
 ARCHISO_REF=v92
 PACKAGES=(intent-appimage intent-os-base intent-os-session intent-os-update intent-os-bootstrap)
 if [[ $ARCH == x86_64 ]]; then
-  PACKAGES+=(facetimehd-dkms intent-os-hw-macbookair6 intent-os-hw-t2)
+  PACKAGES+=(facetimehd-dkms intent-os-hw-mac intent-os-hw-macbookair6 intent-os-hw-t2)
 else
   PACKAGES+=(intent-os-hw-apple-silicon)
 fi

@@ -1,6 +1,6 @@
 # FaceTime HD (Broadcom 1570) PCIe camera driver, built by DKMS for each
 # kernel. From the AUR package of the same name (GPL-2.0). The firmware is
-# Apple's: intent-os-hw-macbookair6 downloads it on the device.
+# Apple's: intent-os-hw-mac downloads it on the device.
 pkgname=facetimehd-dkms
 pkgver=0.7.2
 pkgrel=1

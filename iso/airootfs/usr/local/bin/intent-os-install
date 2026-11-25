@@ -280,14 +280,36 @@ copy_t2_firmware() {
   done < <(find /usr/lib/firmware/brcm -type f -newer "$T2_FIRMWARE_STAMP")
 }
 
+# PCI vendor:device ids present on this machine, one per line (0x14e4:0x43a0).
+pci_ids() {
+  local d
+  for d in /sys/bus/pci/devices/*; do
+    echo "$(cat "$d/vendor" 2>/dev/null):$(cat "$d/device" 2>/dev/null):$(cat "$d/class" 2>/dev/null)"
+  done
+}
+
+# Hardware packages for this machine, chosen by the chips it has, not by model.
 hardware_packages() {
-  local product
   [[ -n $HW ]] && { echo "$HW"; return; }
   is_t2 && { echo intent-os-hw-t2; return; }
-  product=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
-  case $product in
-    MacBookAir6,1|MacBookAir6,2) echo intent-os-hw-macbookair6 ;;
-  esac
+  [[ $ARCH == x86_64 ]] || return 0
+  local ids pkgs=()
+  ids=$(pci_ids)
+  [[ $(cat /sys/class/dmi/id/sys_vendor 2>/dev/null) == "Apple Inc." ]] && pkgs+=(intent-os-hw-mac)
+  # Broadcom BCM4360 Wi-Fi (2013-2017 MacBook Airs and Pros) works only with wl.
+  grep -Eq '^0x14e4:0x(43a0|4360):' <<<"$ids" && pkgs+=(broadcom-wl-dkms linux-headers)
+  # PCIe FaceTime HD camera (2013-2017 Macs).
+  grep -q '^0x14e4:0x1570:' <<<"$ids" && pkgs+=(facetimehd-dkms linux-headers)
+  # Intel graphics: video decode through VA-API.
+  grep -q '^0x8086:0x[0-9a-f]*:0x03' <<<"$ids" && pkgs+=(libva-intel-driver)
+  if (( ${#pkgs[@]} )); then
+    printf '%s\n' "${pkgs[@]}" | awk '!seen[$0]++' | paste -sd' '
+  fi
+}
+
+# The hardware selection includes package $1.
+has_hw() {
+  [[ " $(hardware_packages) " == *" $1 "* ]]
 }
 
 keyring_name() {
@@ -490,7 +512,9 @@ configure_system() {
   configure_pacman
 
   local hw_units="" units="greetd fstrim.timer snapper-cleanup.timer grub-btrfsd intent-os-update.timer"
-  [[ $(hardware_packages) == intent-os-hw-macbookair6 ]] && hw_units="intent-os-macbookair6-wakeup.service"
+  if has_hw intent-os-hw-mac || has_hw intent-os-hw-macbookair6; then
+    hw_units="intent-os-macbookair6-wakeup.service"
+  fi
   [[ $(hardware_packages) == intent-os-hw-t2 ]] && hw_units="t2fanrd.service tiny-dfr.service"
   [[ $(hardware_packages) == "$APPLE_SILICON" ]] && hw_units="speakersafetyd.service"
   # Bootstrap images enable the rest on first boot, once it is installed.

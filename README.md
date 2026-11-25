@@ -97,7 +97,8 @@ Open `http://127.0.0.1:40339` on the device to see the last 24 hours.
 | `packages/intent-os-base` | Base system: kernel, btrfs + snapper, network, audio, owner tools |
 | `packages/intent-os-session` | sway kiosk, PIN lock, top bar with device controls, Intent supervision |
 | `packages/intent-os-update` | Staged idle-time updates and restart hints |
-| `packages/intent-os-hw-macbookair6` | MacBook Air 6,x: Broadcom Wi-Fi, wake fix, video decode, FaceTime HD camera |
+| `packages/intent-os-hw-mac` | Intel Macs without T2: fn keys, wake fix, FaceTime HD firmware download. The installer adds drivers by chip: `broadcom-wl-dkms` (BCM4360 Wi-Fi), `facetimehd-dkms` (FaceTime HD), `libva-intel-driver` (Intel graphics) |
+| `packages/intent-os-hw-macbookair6` | Compatibility package for earlier MacBook Air 6,x installs; pulls in the above |
 | `packages/facetimehd-dkms` | FaceTime HD camera driver (from the AUR package) |
 | `packages/intent-os-hw-apple-silicon` | Apple silicon (M1, M2) on Asahi Linux: kernel, m1n1/U-Boot, GPU, speakers |
 | `asahi/install.sh` | macOS script that runs the Asahi installer with the Intent OS image |

@@ -1,0 +1,17 @@
+# Intel Macs without a T2 chip: Apple keyboard fn keys, the ACPI wake fix and
+# the FaceTime HD camera firmware download. The installer selects it on Apple
+# x86 hardware and adds driver packages for the chips it finds (BCM4360 Wi-Fi,
+# FaceTime HD camera, Intel graphics).
+pkgname=intent-os-hw-mac
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Intent OS support for Intel Macs without a T2 chip"
+arch=(x86_64)
+url="https://github.com/intent-hq/intent-os"
+license=(Apache-2.0)
+depends=(intent-os-base curl xz cpio)
+
+package() {
+  cp -a "$startdir/files/." "$pkgdir/"
+  chmod 0755 "$pkgdir"/usr/lib/intent-os/hw/*
+}
