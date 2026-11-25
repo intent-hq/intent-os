@@ -203,8 +203,25 @@ part() {
   [[ $DISK =~ [0-9]$ ]] && echo "${DISK}p$1" || echo "${DISK}$1"
 }
 
+# A failed run can leave processes (gpg-agent from pacstrap) inside $MNT, which
+# keep the old root mounted and the disk busy for mkfs.
+release_mnt() {
+  local p
+  for p in /proc/[0-9]*; do
+    [[ $(readlink "$p/root" 2>/dev/null) == "$MNT"* ]] && kill "${p#/proc/}" 2>/dev/null
+  done
+  sleep 1
+  swapoff -a 2>/dev/null || true
+  local _
+  for _ in 1 2 3 4 5; do umount -R "$MNT" 2>/dev/null || break; done
+  if findmnt "$MNT" >/dev/null; then
+    umount -R -l "$MNT" 2>/dev/null || true
+    sleep 2
+  fi
+}
+
 partition() {
-  umount -R "$MNT" 2>/dev/null || true
+  release_mnt
   if [[ -n $ROOT_DEV ]]; then
     say "Formatting $ESP_DEV and $ROOT_DEV"
     ESP=$ESP_DEV ROOT=$ROOT_DEV
