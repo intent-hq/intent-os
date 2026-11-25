@@ -66,7 +66,12 @@ log "updating to $date (build $build)"
 # Arch Linux ARM has no archive; aarch64 keeps its normal mirrors.
 if [[ $(uname -m) == x86_64 ]]; then
   # shellcheck disable=SC2016 # pacman expands $repo and $arch
+  # Current mirrors serve only when the archive stalls.
   printf 'Server = https://archive.archlinux.org/repos/%s/$repo/os/$arch\n' "$date" > "$MIRRORLIST"
+  cat >> "$MIRRORLIST" <<'MIRRORS'
+Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
+MIRRORS
 fi
 touch "$STATE/retry"
 # One snapshot pair around the whole update, so the top bar can undo it.
