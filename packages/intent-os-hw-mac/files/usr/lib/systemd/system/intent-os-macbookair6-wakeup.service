@@ -1,5 +1,5 @@
 [Unit]
-Description=Disable spurious ACPI wake sources (MacBook Air 6,x)
+Description=Disable spurious ACPI wake sources (Intel Macs)
 
 [Service]
 Type=oneshot
