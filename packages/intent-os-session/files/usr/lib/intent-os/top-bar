@@ -207,21 +207,27 @@ def memory_usage():
         return None
 
 
-def battery_percent(path):
+def battery_charge(path):
     """Charge as a percentage. A worn battery's own "full" can be tiny, so
     the kernel's capacity can pass 100% (or swing wildly); when the battery
     holds under half its design charge, measure against the design instead.
-    Returns (percent, worn)."""
-    for kind in ("energy", "charge"):
+    Returns the display percentage, wear flag, and capacity details."""
+    for kind, unit in (("energy", "mWh"), ("charge", "mAh")):
         now = read_int(f"{path}/{kind}_now")
         full = read_int(f"{path}/{kind}_full")
         design = read_int(f"{path}/{kind}_full_design")
-        if now is not None and full and design:
+        if now is not None and full and full > 0 and design and design > 0:
             worn = full < design // 2
             pct = round(100 * now / (design if worn else full))
-            return max(0, min(100, pct)), worn
+            details = (
+                f"Current charge: {now / 1000:,.0f} {unit}\n"
+                f"Full capacity: {full / 1000:,.0f} {unit}\n"
+                f"Design capacity: {design / 1000:,.0f} {unit}\n"
+                f"Battery health: {round(100 * full / design)}% of design capacity"
+            )
+            return max(0, min(100, pct)), worn, details
     cap = read_int(f"{path}/capacity")
-    return (None, False) if cap is None else (max(0, min(100, cap)), False)
+    return (None if cap is None else max(0, min(100, cap))), False, ""
 
 
 def volume_state():
@@ -306,7 +312,7 @@ def battery_text():
                 status = f.read().strip()
         except OSError:
             continue
-        cap, worn = battery_percent(path)
+        cap, worn, details = battery_charge(path)
         if cap is None:
             continue
         charging = status == "Charging"
@@ -317,8 +323,12 @@ def battery_text():
         else:
             icon = I_BATTERY_ALERT if worn else level_icon
             estimate = battery_eta(charging=False) if status == "Discharging" else ""
-        return f"{icon} {cap}%{estimate}"
-    return ""
+        power = "Plugged in" if plugged_in else "On battery"
+        tooltip = f"{power} · {status}" if status else power
+        if details:
+            tooltip += f"\n{details}"
+        return f"{icon} {cap}%{estimate}", tooltip
+    return "", None
 
 
 class TopBar(Gtk.Window):
@@ -754,8 +764,9 @@ class TopBar(Gtk.Window):
         self.network.set_text(network_text())
         self.refresh_brightness()
         self.refresh_volume()
-        bat = battery_text()
+        bat, battery_tip = battery_text()
         self.battery.set_text(bat)
+        self.battery.get_parent().set_tooltip_text(battery_tip)
         self.battery.get_parent().set_visible(bool(bat))
         self.clock.set_text(time.strftime("%a %-d %b  %H:%M"))
         self.undo.set_visible(last_update_date() is not None)
