@@ -44,8 +44,6 @@ I_LOCK = "\U000f033e"
 I_UPDATE = "\U000f0453"
 I_UNDO = "\U000f02da"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
-I_CPU = "\U000f035b"
-I_MEMORY = "\uf538"
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
 LOW_POWER_ENABLED = Path("/var/lib/intent-os/low-power-enabled")
 TURBO_CONTROL = Path("/sys/devices/system/cpu/intel_pstate/no_turbo")
@@ -355,9 +353,9 @@ class TopBar(Gtk.Window):
         self.bar.pack_start(self.restart_status, False, False, 0)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.cpu = self.item(None)
-        self.cpu.set_width_chars(6)
+        self.cpu.set_width_chars(8)
         self.memory = self.item(None)
-        self.memory.set_width_chars(6)
+        self.memory.set_width_chars(8)
         self.previous_cpu = None
         self.network = self.item(self.open_wifi)
         self.awake = self.item(None)
@@ -656,18 +654,18 @@ class TopBar(Gtk.Window):
             if total > 0 and 0 <= idle <= total:
                 percent = round(100 * (total - idle) / total)
         self.previous_cpu = sample
-        self.cpu.set_text(f"{I_CPU} {percent}%" if percent is not None else f"{I_CPU} —")
+        self.cpu.set_text(f"CPU {percent}%" if percent is not None else "CPU —")
         cpu_tip = (f"CPU: {percent}% across all cores" if percent is not None
                    else "CPU: waiting for a sample")
         self.cpu.get_parent().set_tooltip_text(cpu_tip)
         self.cpu.get_accessible().set_name(cpu_tip)
         memory = memory_usage()
         if memory is None:
-            self.memory.set_text(f"{I_MEMORY} —")
+            self.memory.set_text("MEM —")
             memory_tip = "Memory: unavailable"
         else:
             used, total = memory
-            self.memory.set_text(f"{I_MEMORY} {round(100 * used / total)}%")
+            self.memory.set_text(f"MEM {round(100 * used / total)}%")
             memory_tip = (f"Memory: {used / 1048576:.1f} / {total / 1048576:.1f} GiB "
                           f"({round(100 * used / total)}%)\nExcludes buffers and reclaimable cache")
         self.memory.get_parent().set_tooltip_text(memory_tip)
