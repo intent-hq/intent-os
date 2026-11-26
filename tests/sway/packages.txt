@@ -1,0 +1,8 @@
+sway
+xwayland
+grim
+jq
+python3-gi
+gir1.2-gtk-3.0
+gir1.2-gtklayershell-0.1
+fonts-dejavu-core

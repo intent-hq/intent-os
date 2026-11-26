@@ -198,8 +198,25 @@ jobs:
             out/smoke/*.ppm
             out/smoke/result.txt
 
+  # Intent apps: one workspace per app, top bar entries, open and focus
+  # (headless sway, two screens, stand-in Intent windows).
+  sway-apps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install sway and test tools
+        run: sudo apt-get update -q && xargs -a tests/sway/packages.txt sudo apt-get install -yq --no-install-recommends
+      - name: Run the headless sway apps test
+        run: make sway-test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sway-apps
+          path: out/sway-apps
+
   publish:
-    needs: [ids, build, smoke, build-arm64]
+    needs: [ids, build, smoke, build-arm64, sway-apps]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     env:

@@ -1,0 +1,72 @@
+#!/usr/bin/python3
+"""Stand-in for the Intent build in tests/sway-apps.sh: a plain Wayland window
+with the titles and app_ids that Intent uses (spec "Window identity").
+
+  stand-in-intent                  the main window: title "Intent", app_id "intent"
+  stand-in-intent --open-app <id>  focus the app's window if open, else open it
+  stand-in-intent --dock           the dock: title "Intent Dock", 240x48
+
+The app list is INTENT_OS_APPS_FILE (the apps.json that Intent writes). An app
+with "standIn": {"lateTitle": true, "appId": "x"} opens titled "Intent" and
+gets its app title after 400 ms, as an Electron window can.
+"""
+import json
+import os
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import GLib, Gtk  # noqa: E402
+
+
+def window(title, app_id, size=(640, 400), late_title=None):
+    GLib.set_prgname(app_id)
+    win = Gtk.Window(title=title)
+    win.set_default_size(*size)
+    label = Gtk.Label(label=late_title or title)
+    label.set_name("content")
+    win.add(label)
+    css = Gtk.CssProvider()
+    css.load_from_data(b"#content { font-size: 28pt; }")
+    Gtk.StyleContext.add_provider_for_screen(win.get_screen(), css,
+                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    if late_title:
+        GLib.timeout_add(400, lambda: win.set_title(late_title) and False)
+    Gtk.main()
+
+
+def open_app(app_id):
+    with open(os.environ["INTENT_OS_APPS_FILE"]) as f:
+        app = next(a for a in json.load(f)["apps"] if a["id"] == app_id)
+    title = app.get("windowTitle") or f"Intent App: {app['name']}"
+    tree = json.loads(subprocess.run(["swaymsg", "-r", "-t", "get_tree"], capture_output=True,
+                                     text=True, check=True).stdout)
+
+    def titles(node):
+        yield node.get("name")
+        for child in node.get("nodes", []) + node.get("floating_nodes", []):
+            yield from titles(child)
+
+    if title in titles(tree):  # one window per app: focus it
+        subprocess.run(["swaymsg", "-q", f'[title="^{title}$"] focus'], check=True)
+        return
+    stand_in = app.get("standIn", {})
+    if stand_in.get("lateTitle"):
+        window("Intent", stand_in.get("appId", "electron"), late_title=title)
+    else:
+        window(title, stand_in.get("appId", f"intent-app-{app_id}"))
+
+
+if __name__ == "__main__":
+    if sys.argv[1:2] == ["--open-app"] and len(sys.argv) == 3:
+        open_app(sys.argv[2])
+    elif sys.argv[1:] == ["--dock"]:
+        window("Intent Dock", "intent", size=(240, 48))
+    elif not sys.argv[1:]:
+        window("Intent", "intent")
+    else:
+        sys.exit("usage: stand-in-intent [--open-app <id> | --dock]")
