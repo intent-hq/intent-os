@@ -357,7 +357,7 @@ class TopBar(Gtk.Window):
         self.cpu = self.item(None)
         self.cpu.set_width_chars(8)
         self.memory = self.item(None)
-        self.memory.set_width_chars(9)
+        self.memory.set_width_chars(6)
         self.previous_cpu = None
         self.network = self.item(self.open_wifi)
         self.awake = self.item(None)
@@ -667,7 +667,7 @@ class TopBar(Gtk.Window):
             memory_tip = "Memory: unavailable"
         else:
             used, total = memory
-            self.memory.set_text(f"{I_MEMORY} {used / 1048576:.1f} GiB")
+            self.memory.set_text(f"{I_MEMORY} {round(100 * used / total)}%")
             memory_tip = (f"Memory: {used / 1048576:.1f} / {total / 1048576:.1f} GiB "
                           f"({round(100 * used / total)}%)\nExcludes buffers and reclaimable cache")
         self.memory.get_parent().set_tooltip_text(memory_tip)
