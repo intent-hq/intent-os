@@ -1,0 +1,141 @@
+#!/usr/bin/python3
+"""Intent apps on Intent OS: list them, and open or focus one.
+
+  apps list         JSON array of installed and open apps, for the top bar
+  apps open <id>    focus the app's window if it is open, else ask Intent to open it
+
+Intent writes the installed list to $XDG_STATE_HOME/intent/apps.json:
+  {"version": 1, "apps": [{"id", "name", "icon", "windowTitle"}]}
+so this needs no daemon credentials. An app window has the title
+"Intent App: <name>" (intent-os-windows gives it its own workspace).
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+TITLE_PREFIX = "Intent App: "
+# An id becomes a command-line argument: no leading dash, no spaces.
+APP_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
+def state_file():
+    override = os.environ.get("INTENT_OS_APPS_FILE")
+    if override:
+        return Path(override)
+    state = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local/state")
+    return Path(state) / "intent/apps.json"
+
+
+def installed():
+    """Installed apps from the state file. A missing or bad file is an empty list."""
+    try:
+        data = json.loads(state_file().read_text())
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("apps"), list):
+        return []
+    apps = []
+    for app in data["apps"]:
+        if not isinstance(app, dict):
+            continue
+        app_id, name = app.get("id"), app.get("name")
+        if not isinstance(app_id, str) or not APP_ID.fullmatch(app_id):
+            continue
+        if not isinstance(name, str) or not name.strip():
+            continue
+        icon = app.get("icon")
+        if not (isinstance(icon, str) and os.path.isabs(icon) and os.path.isfile(icon)):
+            icon = None
+        title = app.get("windowTitle")
+        if not isinstance(title, str) or not title:
+            title = TITLE_PREFIX + name
+        apps.append({"id": app_id, "name": name, "icon": icon, "windowTitle": title})
+    return apps
+
+
+def open_windows():
+    """{title: {"focused": bool, "workspace": name}} for every open app window."""
+    try:
+        tree = json.loads(subprocess.run(["swaymsg", "-r", "-t", "get_tree"], capture_output=True,
+                                         text=True, timeout=5).stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return {}
+    windows = {}
+
+    def walk(node, workspace):
+        if node.get("type") == "workspace":
+            workspace = node.get("name")
+        name = node.get("name") or ""
+        if node.get("type") in ("con", "floating_con") and node.get("pid") and name.startswith(TITLE_PREFIX):
+            windows[name] = {"focused": bool(node.get("focused")), "workspace": workspace}
+        for child in node.get("nodes", []) + node.get("floating_nodes", []):
+            walk(child, workspace)
+
+    walk(tree, None)
+    return windows
+
+
+def listing():
+    windows = open_windows()
+    apps = []
+    for app in installed():
+        window = windows.pop(app["windowTitle"], None)
+        apps.append({**app, "installed": True, "open": window is not None,
+                     "focused": bool(window and window["focused"]),
+                     "workspace": window and window["workspace"]})
+    # Open windows of apps that are not (or no longer) in the list: focus only.
+    for title, window in sorted(windows.items()):
+        apps.append({"id": None, "name": title[len(TITLE_PREFIX):], "icon": None,
+                     "windowTitle": title, "installed": False, "open": True,
+                     "focused": window["focused"], "workspace": window["workspace"]})
+    return apps
+
+
+def criteria(title):
+    """A sway criteria value that matches exactly this title (sway reads a regex)."""
+    return '"^' + re.escape(title).replace('"', '\\"') + '$"'
+
+
+def focus(title):
+    result = subprocess.run(["swaymsg", "-q", f"[title={criteria(title)}] focus"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    return result.returncode == 0
+
+
+def launch(app_id):
+    """The running Intent receives this launch's arguments and this copy exits."""
+    command = os.environ.get("INTENT_OS_INTENT") or str(Path.home() / ".local/lib/intent-os/Intent.AppImage")
+    subprocess.Popen([command, "--open-app", app_id], stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def open_app(key):
+    """Open or focus by app id, or by window title for an open app that is not installed."""
+    for app in listing():
+        if app["id"] == key or (app["id"] is None and app["windowTitle"] == key):
+            if app["open"] and focus(app["windowTitle"]):
+                return 0
+            if app["id"] is None:
+                return 1
+            launch(app["id"])
+            return 0
+    print(f"intent-os-apps: no app {key!r}", file=sys.stderr)
+    return 1
+
+
+def main(argv):
+    if argv[1:] == ["list"]:
+        json.dump(listing(), sys.stdout)
+        print()
+        return 0
+    if len(argv) == 3 and argv[1] == "open":
+        return open_app(argv[2])
+    print("usage: apps list | apps open <id>", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

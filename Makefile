@@ -22,7 +22,8 @@ DOCKER_ARM = docker run --rm --privileged --platform linux/arm64 \
 	-e INTENT_OS_SIGNING_KEY -e HOST_UID="$(shell id -u)" \
 	$(ALARM_IMAGE) bash build/in-container.sh
 
-.PHONY: packages packages-arm64 image smoke lint clean alarm-image image-arm64 image-asahi smoke-arm64
+.PHONY: packages packages-arm64 image smoke lint clean alarm-image image-arm64 image-asahi smoke-arm64 \
+	sway-test sway-test-docker
 
 packages:
 	$(DOCKER) packages
@@ -49,6 +50,17 @@ image-asahi: alarm-image
 
 smoke-arm64:
 	tests/smoke.sh "$(ISO_ARM64)" out/smoke
+
+# Intent apps in headless sway with two screens (tests/sway-apps.sh).
+# sway-test runs on this host (packages in tests/sway/packages.txt);
+# sway-test-docker runs in an Ubuntu 24.04 container, as CI does.
+sway-test:
+	tests/sway-apps.sh out/sway-apps
+
+sway-test-docker:
+	docker build -q -t intent-os-sway-test tests/sway >/dev/null
+	docker run --rm -u "$(shell id -u):$(shell id -g)" -v "$(CURDIR)":/src -w /src \
+		intent-os-sway-test tests/sway-apps.sh out/sway-apps
 
 lint:
 	shellcheck -x build/*.sh tests/*.sh asahi/*.sh iso/airootfs/usr/local/bin/intent-os-install \

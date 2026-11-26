@@ -81,6 +81,19 @@ greetd (autologin "intent") -> intent-os-session -> sway (kiosk config)
    empty workspaces. The QEMU boot test opens a second window with Ctrl+Shift+N and
    checks the placement and both keys; `intent-os-test-report` prints the sway state
    to the serial console, only when QEMU passes `opt/intent-os/test`.
+   A new window moves to the workspace after the highest one, so with two screens it
+   opens on the focused screen, not on the other screen's empty workspace. When the
+   last window on the focused workspace closes, focus goes to the previous workspace
+   on that screen, so sway removes the empty one.
+   **Intent apps** (agent-built web apps; Labs) are Intent windows titled
+   `Intent App: <name>`, so each app gets its own workspace. An app window that gets
+   its title only after it opens moves when it then shares a workspace. The top bar
+   lists the installed apps from `$XDG_STATE_HOME/intent/apps.json`, which Intent
+   writes, so the bar needs no daemon credentials; a dot marks an open app. A click
+   runs `/usr/lib/intent-os/apps open <id>`: it focuses the open window
+   (`[title="^Intent App: <name>$"] focus`) or runs `Intent.AppImage --open-app <id>`.
+   `tests/sway-apps.sh` (`make sway-test`, CI job `sway-apps`) checks this in headless
+   sway with two screens and a stand-in Intent.
 
 9. **Stay awake while agents work.** `intent-os-keep-awake` asks the local intentd for
    mid-turn agents (`agent.listActive` on its Unix socket) every 20 s. While one is

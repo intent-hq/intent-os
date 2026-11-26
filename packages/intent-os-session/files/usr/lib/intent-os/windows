@@ -4,6 +4,13 @@
 # order. The first Intent window stays where it opens (workspace 1). Floating
 # windows (dialogs) stay on their workspace. sway removes empty workspaces.
 #
+# Intent apps (title "Intent App: <name>", app_id intent-app-<id> where the
+# platform allows) are Intent windows too, so each app gets its own workspace.
+# An app window can get its title after it opens; when it then shares a
+# workspace with another window, it moves too. When the last window on the
+# focused workspace closes, focus goes to the previous workspace on that
+# screen, so sway removes the empty one instead of showing a blank screen.
+#
 # The dock (title "Intent Dock", see the sway config) never gets a workspace:
 # it floats at the top-left of the main screen. sway announces every
 # window as a tiled one and floats a fixed-size window (the dock) only after
@@ -14,29 +21,56 @@
 # dock with its screen, so it goes back to 0,0 here (sway 1.7 has no output
 # event: the layout is read every 2 seconds).
 set -u
-is_intent='((.app_id // "") | test("intent"; "i"))
-  or ((.window_properties.class // "") | test("intent"; "i"))'
+is_app='((.name // "") | startswith("Intent App: "))'
+is_intent="((.app_id // \"\") | test(\"intent\"; \"i\"))
+  or ((.window_properties.class // \"\") | test(\"intent\"; \"i\"))
+  or $is_app"
 is_dock='((.name // "") == "Intent Dock")'
 
+# Move window $1 to a new workspace after the last one when another tiled
+# Intent window is open. With $2 = shared, only when its workspace also holds
+# another tiled window.
 place() {
-  local id=$1 tree target
+  local id=$1 mode=${2:-new} tree target
   tree=$(swaymsg -r -t get_tree) || return 0
   # Only a tiled Intent window that is not the dock moves.
   jq -e --argjson id "$id" "
     any(.. | objects | select(.id? == \$id);
         .type == \"con\" and ($is_intent) and ($is_dock | not))" <<<"$tree" >/dev/null ||
     return 0
-  # The number after the highest workspace that holds another tiled Intent
-  # window; empty when this is the only one.
+  if [[ $mode == shared ]]; then
+    jq -e --argjson id "$id" '
+      any(.. | objects | select(.type? == "workspace");
+          [.nodes[]? | .. | objects | select(.type? == "con" and .pid? != null) | .id]
+          | any(.[]; . == $id) and length > 1)' <<<"$tree" >/dev/null || return 0
+  fi
+  # The number after the highest workspace, so the window opens on the
+  # focused screen (with two screens, the second starts on an empty
+  # workspace 2); empty when no other tiled Intent window is open.
   target=$(jq -r --argjson id "$id" "
-    [.. | objects | select(.type? == \"workspace\" and (.num // -1) >= 0)
-        | {num, ids: [.. | objects | select(.type? == \"con\" and .pid? != null)
-                         | select($is_intent) | select($is_dock | not) | .id]}
-        | select(any(.ids[]; . != \$id)) | .num]
-    | if length > 0 then max + 1 else empty end" <<<"$tree")
+    [.. | objects | select(.type? == \"workspace\" and (.num // -1) >= 0)] as \$ws
+    | if any(\$ws[] | .nodes[]? | .. | objects
+             | select(.type? == \"con\" and .pid? != null and .id != \$id)
+             | select($is_intent) | select($is_dock | not); true)
+      then [\$ws[].num] | max + 1 else empty end" <<<"$tree")
   [[ -n $target ]] || return 0
   swaymsg -q "[con_id=$id] move container to workspace number $target; workspace number $target" ||
     echo "intent-os-windows: could not move window $id to workspace $target" >&2
+}
+
+# After a window closes: leave an empty focused workspace when its screen has
+# another one.
+leave_empty() {
+  local ws
+  ws=$(swaymsg -r -t get_workspaces | jq -r '
+    first(.[] | select(.focused)) as $w
+    | select([.[] | select(.output == $w.output)] | length > 1) | $w.name') || return 0
+  [[ -n $ws ]] || return 0
+  # Empty means no windows, tiled or floating.
+  swaymsg -r -t get_tree | jq -e --arg ws "$ws" '
+    any(.. | objects | select(.type? == "workspace" and .name == $ws);
+        (.nodes | length) == 0 and (.floating_nodes | length) == 0)' >/dev/null || return 0
+  swaymsg -q 'workspace prev_on_output'
 }
 
 follow_screens() {
@@ -53,8 +87,17 @@ follow_screens() {
 follow_screens &
 
 swaymsg -r -m -t subscribe '["window"]' |
-  jq --unbuffered -r "select(.change == \"new\") | .container
-    | select(.type == \"con\") | select($is_intent) | .id" |
-  while read -r id; do
-    place "$id"
+  jq --unbuffered -r "
+    if .change == \"close\" then \"close 0\"
+    elif .change == \"new\" then .container | select(.type == \"con\") | select($is_intent)
+      | \"new \(.id)\"
+    elif .change == \"title\" then .container | select(.type == \"con\") | select($is_app)
+      | \"title \(.id)\"
+    else empty end" |
+  while read -r change id; do
+    case $change in
+      new) place "$id" ;;
+      title) place "$id" shared ;;
+      close) leave_empty ;;
+    esac
   done

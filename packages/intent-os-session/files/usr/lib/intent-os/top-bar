@@ -1,9 +1,13 @@
 #!/usr/bin/python3
-"""Intent OS top bar: network, battery, clock and device controls.
+"""Intent OS top bar: Intent apps, network, battery, clock and device controls.
 
 It takes no space. A 2 px strip waits at the top edge; when the pointer
 touches it, the bar opens on top of Intent and closes once the pointer
 leaves it. The menu button opens the device actions.
+
+The installed Intent apps (from the state file Intent writes, read by the
+apps helper next to this file) sit after the brand. A dot marks an open app.
+Click: focus the app's window when it is open, else ask Intent to open it.
 """
 import json
 import os
@@ -17,8 +21,10 @@ from urllib.request import ProxyHandler, build_opener
 import gi
 
 gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
 gi.require_version("GtkLayerShell", "0.1")
-from gi.repository import Gdk, GLib, Gtk, GtkLayerShell  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk, GtkLayerShell  # noqa: E402
 
 HEIGHT = 28
 TRIGGER = 2
@@ -49,6 +55,8 @@ LOW_POWER_ENABLED = Path("/var/lib/intent-os/low-power-enabled")
 TURBO_CONTROL = Path("/sys/devices/system/cpu/intel_pstate/no_turbo")
 LAST_UPDATE = "/var/lib/intent-os/last-update"
 PEEK_MS = 1500
+APPS = str(Path(__file__).resolve().with_name("apps"))
+APP_ICON = 16
 
 # Semantic colors from https://intentapp.dev/design-system.md
 PALETTES = {
@@ -67,6 +75,12 @@ window { background: transparent; }
 .button { padding: 0 8px; color: @content; }
 .button:hover, .item.clickable:hover { background: @hover; color: @content; }
 .hint { color: @accent; }
+.app { padding: 0 8px; color: @muted; border-radius: 5px; }
+.app:hover { background: @hover; color: @content; }
+.app.open { color: @content; }
+.app.focused { background: @hover; }
+.app-letter { background: @hover; border-radius: 4px; font-size: 8pt; font-weight: 600; }
+.app-dot { color: @accent; font-size: 6pt; }
 popover.power-menu { background: @surface; border: 1px solid @edge; border-radius: 10px; }
 .power-menu .button { padding: 5px 10px; }
 """
@@ -324,6 +338,10 @@ class TopBar(Gtk.Window):
         self.restart_status.set_no_show_all(True)
         self.restart_status.get_style_context().add_class("item")
         self.bar.pack_start(self.restart_status, False, False, 0)
+        self.apps_box = Gtk.Box(spacing=2)
+        self.apps_box.set_margin_start(8)
+        self.apps_shown = None
+        self.bar.pack_start(self.apps_box, False, False, 0)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.network = self.item(self.open_wifi)
         self.awake = self.item(None)
@@ -415,6 +433,64 @@ class TopBar(Gtk.Window):
         GLib.timeout_add_seconds(5, self.refresh)
         # The volume and brightness keys send SIGUSR1: show the bar briefly.
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, unix_signal.SIGUSR1, self.peek)
+
+    def refresh_apps(self):
+        try:
+            apps = json.loads(output(APPS, "list") or "[]")
+        except ValueError:
+            apps = []
+        if apps == self.apps_shown:
+            return False
+        self.apps_shown = apps
+        for child in self.apps_box.get_children():
+            self.apps_box.remove(child)
+        for app in apps:
+            self.apps_box.pack_start(self.app_button(app), False, False, 0)
+        self.apps_box.show_all()
+        return False
+
+    def app_button(self, app):
+        box = Gtk.EventBox()
+        row = Gtk.Box(spacing=6)
+        row.set_margin_start(8)
+        row.set_margin_end(8)
+        icon = None
+        if app.get("icon"):
+            try:
+                icon = Gtk.Image.new_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    app["icon"], APP_ICON, APP_ICON, True))
+            except GLib.Error:
+                icon = None
+        if icon is None:
+            icon = Gtk.Label(label=(app["name"][:1] or "?").upper())
+            icon.set_size_request(APP_ICON, APP_ICON)
+            icon.get_style_context().add_class("app-letter")
+        icon.set_valign(Gtk.Align.CENTER)
+        row.pack_start(icon, False, False, 0)
+        row.pack_start(Gtk.Label(label=app["name"]), False, False, 0)
+        if app.get("open"):
+            dot = Gtk.Label(label="\u25cf")
+            dot.get_style_context().add_class("app-dot")
+            row.pack_start(dot, False, False, 0)
+        box.add(row)
+        ctx = box.get_style_context()
+        ctx.add_class("app")
+        for state in ("open", "focused"):
+            if app.get(state):
+                ctx.add_class(state)
+        state = "open" if app.get("open") else "not open"
+        box.set_tooltip_text(f"{app['name']} ({state})")
+        box.get_accessible().set_name(f"{app['name']}, {state}")
+        key = app["id"] or app["windowTitle"]
+
+        def activate(*_):
+            run(APPS, "open", key)
+            # The window opens or takes focus: show the new state soon.
+            GLib.timeout_add(600, self.refresh_apps)
+            GLib.timeout_add(2000, self.refresh_apps)
+
+        box.connect("button-press-event", activate)
+        return box
 
     def open_wifi(self):
         control = self.network.get_parent()
@@ -604,6 +680,7 @@ class TopBar(Gtk.Window):
         self.brightness.get_parent().set_visible(bool(text))
 
     def peek(self):
+        self.refresh_apps()
         self.refresh_brightness()
         self.refresh_volume()
         self.open(refresh=False)
@@ -612,6 +689,7 @@ class TopBar(Gtk.Window):
         return True  # keep the signal handler
 
     def refresh(self):
+        self.refresh_apps()
         self.network.set_text(network_text())
         self.refresh_brightness()
         self.refresh_volume()
