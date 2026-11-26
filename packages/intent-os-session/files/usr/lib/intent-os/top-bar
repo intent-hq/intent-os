@@ -44,8 +44,8 @@ I_LOCK = "\U000f033e"
 I_UPDATE = "\U000f0453"
 I_UNDO = "\U000f02da"
 I_AWAKE = "\U000f0176"  # coffee: kept awake for a working agent
-I_CPU = "CPU"
-I_MEMORY = "\U000f035b"
+I_CPU = "\U000f035b"
+I_MEMORY = "\uf538"
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "intent-os-awake")
 LOW_POWER_ENABLED = Path("/var/lib/intent-os/low-power-enabled")
 TURBO_CONTROL = Path("/sys/devices/system/cpu/intel_pstate/no_turbo")
@@ -355,7 +355,7 @@ class TopBar(Gtk.Window):
         self.bar.pack_start(self.restart_status, False, False, 0)
         self.bar.pack_start(Gtk.Box(), True, True, 0)
         self.cpu = self.item(None)
-        self.cpu.set_width_chars(8)
+        self.cpu.set_width_chars(6)
         self.memory = self.item(None)
         self.memory.set_width_chars(6)
         self.previous_cpu = None
