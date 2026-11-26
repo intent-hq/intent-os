@@ -33,9 +33,8 @@ CLOSE_DELAY_MS = 350
 I_WIFI = ["\U000f092e", "\U000f091f", "\U000f0922", "\U000f0925", "\U000f0928"]
 I_WIRED = "\U000f0200"
 I_OFFLINE = "\U000f05aa"
-I_BATTERY = ["\U000f007a", "\U000f007b", "\U000f007c", "\U000f007d", "\U000f007e",
-             "\U000f007f", "\U000f0080", "\U000f0081", "\U000f0082", "\U000f0079"]
-I_CHARGING = "\U000f0084"
+I_BATTERY = ["\uf244", "\uf243", "\uf242", "\uf241", "\uf240"]
+I_CHARGING = "\uf0e7"
 I_BATTERY_ALERT = "\U000f0083"  # worn battery: replace it
 I_VOLUME = ["\U000f057f", "\U000f0580", "\U000f057e"]  # low, medium, high
 I_MUTED = "\U000f075f"
@@ -311,11 +310,12 @@ def battery_text():
         if cap is None:
             continue
         charging = status == "Charging"
+        level_icon = I_BATTERY[round(cap / 25)]
         if plugged_in or charging:
-            icon = I_CHARGING
+            icon = f"{level_icon} {I_CHARGING}"
             estimate = battery_eta(charging=True) if charging else ""
         else:
-            icon = I_BATTERY_ALERT if worn else I_BATTERY[max(0, min(9, cap // 10 - 1))]
+            icon = I_BATTERY_ALERT if worn else level_icon
             estimate = battery_eta(charging=False) if status == "Discharging" else ""
         return f"{icon} {cap}%{estimate}"
     return ""
