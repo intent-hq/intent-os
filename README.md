@@ -25,8 +25,10 @@ Design: [docs/DESIGN.md](docs/DESIGN.md).
 5. Remove the stick and restart. The Air boots to the PIN screen, then Intent.
 
 The PIN unlocks the device. Intent and its agents can run `sudo` without a password.
-Move the pointer to the top edge to show the bar (Wi-Fi, battery, clock, restart, shut
-down); click the network name to change Wi-Fi. Cmd+C/X/V copy, cut and paste, also in the terminal. While an agent works on the device and it is on power, it does not sleep, even with the lid closed. After an update, the undo icon in the top bar reverts it. Install coding agents from
+Move the pointer to the top edge to show the bar (CPU, memory, Wi-Fi, battery, clock,
+restart, shut down). CPU and memory percentages update every two seconds; memory excludes
+buffers and reclaimable cache. Hover over memory to see used and total RAM in GiB.
+Click the network name to change Wi-Fi. Cmd+C/X/V copy, cut and paste, also in the terminal. While an agent works on the device and it is on power, it does not sleep, even with the lid closed. After an update, the undo icon in the top bar reverts it. Install coding agents from
 Intent; their sign-in pages open in a small Intent window. For emergencies only, Ctrl+Alt+F2 opens a text
 console.
 
